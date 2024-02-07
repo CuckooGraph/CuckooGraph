@@ -15,6 +15,8 @@
  successor and precursor queries compared to the state-of-the-art.
 ## About this repository
 * `CuckooGraph` contains the codes of CuckooGraph and the other algorithms.
+* `Syn-LDG-Code` contains the codes we used to synthesize Synthetic-LDG Dataset.
+* `Horae` contains the codes of Horae.
 
 ## About settings of the L-CHT length in our experiments
 * In all the related experiments, the results of CuckooGraph are shown for both pre-expansion (noTransformation, NT)
