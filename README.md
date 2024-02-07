@@ -59,3 +59,10 @@ The settings of L-CHT length in CuckooGraph(NT) in each experiments are as follo
 ## About the setting of kicked out threshold
 In our codes, we define `kicktimes` as the threshold which the total number of kicked out can't exceed. It is defined in `Cuckoo.h`. `kicktimes` is set to 500 in all the experiments of our paper.
 
+## About parameter settings of the graph stream summarization schemes in our experiments
+* `TCM`: width=19200 depth=19200 hashnum=9 usetable=false
+* `GSS`: width=19200 range=16 p_num=16 size=2 f_num=16 usehashtable=false
+* `Auxo`: width=100 range=4 p_num=16 f_num=16
+* `Horae`: startTime=0 timesliceLength=61200 gl=1 width=6500 depth=6500 fingerprintLength=7 cache_align=false kick=false row_addrs=4 column_addrs=4
+
+
