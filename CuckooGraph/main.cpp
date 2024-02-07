@@ -75,7 +75,7 @@ TUPLES* read_data(const char* PATH, const count_type length,
 	return items;
 }
 
-const string folder = "./dataset/";
+const string folder = "./";
 const string filenames[] = { "130000.dat" };
 
 
