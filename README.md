@@ -1,26 +1,18 @@
 # CuckooGraph
 ## Introduction
- Graph streams play an increasingly important role in various big data 
- applications, but their storage and query are facing challenges
- because graph streams have the characteristics of large-scale, 
- dynamic updates, and high query complexity. Existing graph storage
- solutions are either too time- and space-inefficient or fail to be
- error-free. This paper proposes a novel error-free storage scheme
- for graph streams called CuckooGraph. It can flexibly adapt to 
- unknown graph streams of any size, while significantly reducing the
- time for insertion and various query tasks. The key techniques of
- CuckooGraph include Transformation and Blacklist. Transformation 
- makes good use of limited memory space by designing related
- data structures into a flexible and spatially transformable form to
- smoothly expand or tighten the memory based on the number of
- incoming items. Blacklist addresses the problem that items may
- fail to be inserted into the original cuckoo hash table and generate
- errors, ensuring that CuckooGraph is absolutely error-free and 
- improves efficiency. We conduct extensive experiments on large-scale
- real-world datasets to evaluate the performance of CuckooGraph.
- The results show that, compared with the state-of-the-art, CuckooGraph 
- significantly reduces the query time by about four orders of
- magnitude on the 1-hop successor and precursor queries.
+ Graphs play an increasingly important role in various big data applications. 
+ However, the performance of graph storage is challenged due to the dynamic update, 
+ large scale, and high query complexity of graphs. Existing graph storage cannot address the above challenges simultaneously. 
+ This paper proposes a novel storage scheme for large-scale dynamic graphs called CuckooGraph. 
+ It can be flexibly adapted to unknown graphs of arbitrary size, while
+ significantly reducing the time for insertion and various query
+ tasks. The key techniques of CuckooGraph include Transformation and Denylist. 
+ Transformation makes good use of limited memory space by designing related data structures into a flexible
+ and spatially transformable form to smoothly expand or tighten the memory based on the number of incoming items. 
+ Denylist addresses the problem that items may fail to be inserted into the
+ original cuckoo hash table and generate errors, ensuring that CuckooGraph is absolutely error-free and time efficient.
+ We conduct extensive experiments. The results show that CuckooGraph significantly reduces query time by four orders of magnitude on 1-hop
+ successor and precursor queries compared to the state-of-the-art.
 ## About this repository
 * `CuckooGraph` contains the codes of CuckooGraph and the other algorithms.
 
