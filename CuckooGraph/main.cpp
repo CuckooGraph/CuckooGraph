@@ -9,10 +9,14 @@
 #include <fstream>
 #include<time.h>
 #include<algorithm>
+#include<map>
 #include"BobHash.h"
 #include"Util.h"
 #include"Cuckoo.h"
 #include"WindBell.h"
+#include"GSS.h"
+#include"Auxo.h"
+#include"tcm.h"
 
 
 #define lt 6
@@ -30,14 +34,19 @@
 #define us2 221
 #define link_num 3
 #define blink_num 3
-#define minc1 4
-#define minc2 2
+#define minc1 8
+#define minc2 4
 #define cthres 0.35
-#define bminc1 4
-#define bminc2 2
+#define bminc1 8
+#define bminc2 4
 #define bcthres 0.35
 #define sbl 128
 #define bbl 128
+
+
+static int hole_del = 0;
+static int big_del = 0;
+static int BIG_DEL = 0;
 
 using namespace std::chrono;
 using namespace std;
@@ -66,7 +75,7 @@ TUPLES* read_data(const char* PATH, const count_type length,
 	return items;
 }
 
-const string folder = "./";
+const string folder = "./dataset/";
 const string filenames[] = { "130000.dat" };
 
 
@@ -222,38 +231,36 @@ Edge* read_NotreDame_data(count_type* cnt, const count_type length = 100000000) 
 	return items;
 }
 
-void test(int uy1, int uy2) {
-	count_type cnt;
-	TUPLES* items = read_data((folder + filenames[0]).c_str(), 100000000, &cnt);
-	Edge* edge = new Edge[cnt];
-	for (count_type i = 0; i < cnt; ++i)
-		memcpy(&edge[i], &items[i], sizeof(Edge));
-	Cuckoo cuckoo(uy1, uy2, 0, 221);
-	int sum = 0;
-	for (int i = 0; i < cnt; ++i) {
-		if (!(cuckoo.insert(edge[i].src)))
-			++sum;
-		if (sum == 2) {
-			double total = (uy1 + uy2) * bup;
-			double s = 0;
-			for (int j = 0; j < uy1; ++j)
-				for (int k = 0; k < bup; ++k)
-				{
-					if (!cuckoo.layer1.layer[j].bslot[k] == 0)
-						s = s + 1;
-				}
-			for (int j = 0; j < uy2; ++j)
-				for (int k = 0; k < bup; ++k) {
-					if (!cuckoo.layer2.layer[j].bslot[k] == 0)
-						s = s + 1;
-				}
-			double ans = s / total;
-			cout << "Rate:　　" << ans << "  l1:l2　 :   " << uy1 << ":" << uy2 << endl;
-			delete[] items;
-			delete[] edge;
-			return;
-		}
+Edge* read_CuckooGraph_data(count_type* cnt, const count_type length = 100000000) {
+	Edge* items = new Edge[length];
+	Edge* it = items;
+
+	int intbig = 2147483647;
+
+	ifstream infile;
+	infile.open("./CuckooGraphDatasetNewNew.txt");
+	int i = 0;
+	while (1) {
+
+
+		string src;
+		string dst;
+		if (!getline(infile, src, ',')) break;
+		getline(infile, dst);
+
+
+		items[i].src = stoi(src);
+		items[i].dst = stoi(dst);
+		asrc[i] = items[i].src;
+		adst[i] = items[i].dst;
+		++i;
+
 	}
+	(*cnt) = i;
+
+
+	infile.close();
+	return items;
 }
 
 
@@ -293,7 +300,272 @@ void test_mul(int uy1, int uy2) {
 	delete[] edge;
 }
 
+void test(int uy1, int uy2) {
+	count_type cnt = 100 * 1024 * 1024;
+	Edge* edge = new Edge[cnt];
+	for (count_type i = 0; i < cnt; ++i) {
+		edge[i].src = i + 3;
+		edge[i].dst = i + 9;
+	}
+	Cuckoo cuckoo(uy1, uy2, 0, 99999);
+	int sum = 0;
+	for (int i = 0; i < cnt; ++i) {
+		if (!(cuckoo.insert(edge[i].src)))
+			++sum;
+		if (sum == 1) {
+			double total = (uy1 + uy2) * bup;
+			double s = 0;
+			for (int j = 0; j < uy1; ++j)
+				for (int k = 0; k < bup; ++k)
+				{
+					if (!cuckoo.layer1.layer[j].bslot[k] == 0)
+						s = s + 1;
+				}
+			for (int j = 0; j < uy2; ++j)
+				for (int k = 0; k < bup; ++k) {
+					if (!cuckoo.layer2.layer[j].bslot[k] == 0)
+						s = s + 1;
+				}
 
+			double ans = s / total;
+			cout << "Rate:　　" << ans << "  l1:l2　 :   " << uy1 << ":" << uy2 << endl;
+			delete[] edge;
+			return;
+		}
+	}
+}
+
+class mergehash1 {
+public:
+	Cuckoo* link[link_num];
+	int ll1, ll2;
+	int s1, s2;
+	vector<key_type> blacklist;
+	mergehash1(int _l1, int _l2, int _s1, int _s2) {
+		for (int i = 0; i < link_num; ++i)
+			link[i] = NULL;
+		s1 = _s1;
+		s2 = _s2;
+		ll1 = _l1;
+		ll2 = _l2;
+	}
+
+	~mergehash1() {
+		for (int i = 0; i < link_num; ++i)
+		{
+			if (link[i] != NULL)
+				delete link[i];
+		}
+		blacklist.clear();
+	}
+
+	double test_rate() {
+		double sum = blacklist.size();
+		double num = blacklist.size();
+
+		for (int i = 0; i < link_num; ++i)
+		{
+			if (link[i] != NULL)
+			{
+				sum = sum + ((link[i]->len1) + (link[i]->len2)) * bup;
+				num = num + link[i]->num;
+			}
+		}
+		return num / sum;
+
+	}
+
+	Cuckoo* expand(Cuckoo* c1) {
+		int l1 = c1->len1;
+		int l2 = c1->len2;
+		Cuckoo* c = new Cuckoo(l1 * 2, l2 * 2, s1, s2);
+		memcpy(c->layer1.layer, c1->layer1.layer, l1 * sizeof(Bucket));
+		memcpy(c->layer1.layer + l1, c1->layer1.layer, l1 * sizeof(Bucket));
+		memcpy(c->layer2.layer, c1->layer2.layer, l2 * sizeof(Bucket));
+		memcpy(c->layer2.layer + l2, c1->layer2.layer, l2 * sizeof(Bucket));
+		c->num = c1->num;
+		for (int i = 0; i < l1; ++i) {
+			int k = i + l1;
+			for (int j = 0; j < bup; ++j) {
+				if (c->layer1.layer[i].bslot[j] == 0)continue;
+				if (i != (int)(mmhash(c->layer1.layer[i].bslot[j], s1) % (uint32_t)(l1 * 2)))
+					c->layer1.layer[i].bslot[j] = 0;
+				else c->layer1.layer[k].bslot[j] = 0;
+			}
+		}
+
+		for (int i = 0; i < l2; ++i) {
+			int k = i + l2;
+			for (int j = 0; j < bup; ++j) {
+				if (c->layer2.layer[i].bslot[j] == 0)continue;
+				if (i != (int)(mmhash(c->layer2.layer[i].bslot[j], s2) % (uint32_t)(l2 * 2)))
+					c->layer2.layer[i].bslot[j] = 0;
+				else c->layer2.layer[k].bslot[j] = 0;
+			}
+		}
+
+		delete c1;
+		return c;
+	}
+
+	Cuckoo* compress(Cuckoo* c1) {
+		int l1 = c1->len1;
+		int l2 = c1->len2;
+		int cl1 = l1 / 2;
+		int cl2 = l2 / 2;
+		queue<key_type> mq;
+		int asum = c1->num;
+		Cuckoo* c = new Cuckoo(cl1, cl2, s1, s2);
+
+		memcpy(c->layer1.layer, c1->layer1.layer, cl1 * sizeof(Bucket));
+		memcpy(c->layer2.layer, c1->layer2.layer, cl2 * sizeof(Bucket));
+
+		for (int i = cl1; i < l1; ++i) {
+			for (int j = 0; j < bup; ++j) {
+				if (c1->layer1.layer[i].bslot[j] == 0)continue;
+				if ((c->layer1.layer[i - cl1].insert(c1->layer1.layer[i].bslot[j])) == 0)
+					mq.push(c1->layer1.layer[i].bslot[j]);
+			}
+		}
+
+		for (int i = cl2; i < l2; ++i) {
+			for (int j = 0; j < bup; ++j) {
+				if (c1->layer2.layer[i].bslot[j] == 0)continue;
+				if ((c->layer2.layer[i - cl2].insert(c1->layer2.layer[i].bslot[j])) == 0)
+					mq.push(c1->layer2.layer[i].bslot[j]);
+			}
+		}
+
+		while (!mq.empty()) {
+			if (!c->insert(mq.front())) {
+				blacklist.push_back(mykick);
+				--asum;
+			}
+			mq.pop();
+		}
+
+		c->num = asum;
+
+		delete c1;
+		return c;
+	}
+
+	int del(key_type e) {
+		for (int i = 0; i < link_num; ++i)
+		{
+			if (link[i] != NULL)
+			{
+				if (link[i]->del(e)) {
+					if (link[i]->num == 0) {
+						delete link[i];
+						link[i] = NULL;
+						return 1;
+					}
+					else if ((link[i]->len2 >= minc2) && (link[i]->num < (link[i]->len1 + link[i]->len2) * bup * cthres)) {
+						link[i] = compress(link[i]);
+						return 1;
+					}
+					return 1;
+				}
+			}
+		}
+
+		for (auto it = blacklist.begin(); it != blacklist.end(); ++it) {
+			if (*it == e) {
+				blacklist.erase(it);
+				return 1;
+			}
+		}
+		return 0;
+	}
+
+	bool insert(key_type e) {
+		if (query(e)) return true;
+		double tr = 2;
+		int aim = 0;
+		int tnull = -1;
+		bool flag = false;
+		for (int i = 0; i < link_num; ++i)
+		{
+			if (link[i] != NULL)
+			{
+				double tn = link[i]->num;
+				double sum = (link[i]->len1 + link[i]->len2) * bup;
+				double ir = (tn / sum);
+				if (ir < tr) {
+					tr = ir;
+					aim = i;
+				}
+			}
+			else if (flag == false) {
+				flag = true;
+				tnull = i;
+			}
+		}
+		if (tr < rate) {
+			if (!(link[aim]->insert(e))) blacklist.push_back(mykick);
+			return true;
+		}
+		if (tnull >= 0) {
+			int _l1 = ll1;
+			int _l2 = ll2;
+			for (int ww = 0; ww < tnull; ++ww) {
+				_l1 = _l1 / 2;
+				_l2 = _l2 / 2;
+			}
+			link[tnull] = new Cuckoo(_l1, _l2, s1, s2);
+
+			queue<key_type> qq;
+			for (auto it = blacklist.begin(); it != blacklist.end(); ++it) {
+				if (!(link[tnull]->insert(*it)))qq.push(mykick);
+			}
+			blacklist.clear();
+			while (!qq.empty()) {
+				blacklist.push_back(qq.front());
+				qq.pop();
+			}
+			if (!(link[tnull]->insert(e))) blacklist.push_back(mykick);
+			return true;
+		}
+		int small = link[0]->len1;
+		aim = 0;
+		for (int i = 1; i < link_num; ++i) {
+			if (link[i]->len1 < small) {
+				small = link[i]->len1;
+				aim = i;
+			}
+		}
+		link[aim] = expand(link[aim]);
+		queue<key_type> qq;
+		for (auto it = blacklist.begin(); it != blacklist.end(); ++it) {
+			if (!(link[aim]->insert(*it)))qq.push(mykick);
+		}
+		blacklist.clear();
+		while (!qq.empty()) {
+			blacklist.push_back(qq.front());
+			qq.pop();
+		}
+		if (!(link[aim]->insert(e))) blacklist.push_back(mykick);
+		return true;
+	}
+
+	bool query(key_type e) {
+		for (int i = 0; i < link_num; ++i)
+		{
+			if (link[i] != NULL)
+			{
+				if (link[i]->query(e))
+					return true;
+			}
+		}
+
+		for (auto it = blacklist.begin(); it != blacklist.end(); ++it) {
+			if (*it == e)
+				return true;
+		}
+		return false;
+	}
+};
 
 static vector<Edge> sblacklist;
 
@@ -308,9 +580,6 @@ public:
 		memset(slot, 0, sizeof(Cuckoo*) * 3);
 
 	}
-
-
-
 
 
 #ifdef TEST_MEM
@@ -363,7 +632,7 @@ public:
 			}
 		}
 		return num / sum;
-	}
+}
 
 	Cuckoo* merge(Cuckoo* c1, Cuckoo* c2) {
 		int l1 = c1->len1;
@@ -434,6 +703,85 @@ public:
 			}
 			mq.pop();
 		}
+		delete c1;
+		delete c2;
+		return c;
+	}
+
+	Cuckoo* merge(Cuckoo* c0, Cuckoo* c1, Cuckoo* c2) {
+		int l1 = c0->len1;
+		int l2 = c0->len2;
+		queue<key_type> mq;
+		Cuckoo* c = new Cuckoo(l1 * 2, l2 * 2, us1, us2);
+		memcpy(c->layer1.layer, c0->layer1.layer, l1 * sizeof(Bucket));
+		memcpy(c->layer1.layer + l1, c0->layer1.layer, l1 * sizeof(Bucket));
+		memcpy(c->layer2.layer, c0->layer2.layer, l2 * sizeof(Bucket));
+		memcpy(c->layer2.layer + l2, c0->layer2.layer, l2 * sizeof(Bucket));
+		c->num = c0->num;
+		for (int i = 0; i < l1; ++i) {
+			int k = i + l1;
+			for (int j = 0; j < bup; ++j) {
+				if (c->layer1.layer[i].bslot[j] == 0)continue;
+				if (i != (int)(mmhash(c->layer1.layer[i].bslot[j], us1) % (uint32_t)(l1 * 2)))
+					c->layer1.layer[i].bslot[j] = 0;
+				else c->layer1.layer[k].bslot[j] = 0;
+			}
+		}
+
+		for (int i = 0; i < l1 / 2; ++i) {
+			for (int j = 0; j < bup; ++j) {
+				if (c1->layer1.layer[i].bslot[j] == 0)continue;
+				if ((c->layer1.layer[(mmhash(c1->layer1.layer[i].bslot[j], us1) % (uint32_t)(l1 * 2))].insert(c1->layer1.layer[i].bslot[j])) == 0)
+					mq.push(c1->layer1.layer[i].bslot[j]);
+				else
+					c->num = (c->num) + 1;
+			}
+
+			for (int j = 0; j < bup; ++j) {
+				if (c2->layer1.layer[i].bslot[j] == 0)continue;
+				if ((c->layer1.layer[(mmhash(c2->layer1.layer[i].bslot[j], us1) % (uint32_t)(l1 * 2))].insert(c2->layer1.layer[i].bslot[j])) == 0)
+					mq.push(c2->layer1.layer[i].bslot[j]);
+				else
+					c->num = (c->num) + 1;
+			}
+		}
+
+		for (int i = 0; i < l2; ++i) {
+			int k = i + l2;
+			for (int j = 0; j < bup; ++j) {
+				if (c->layer2.layer[i].bslot[j] == 0)continue;
+				if (i != (int)(mmhash(c->layer2.layer[i].bslot[j], us2) % (uint32_t)(l2 * 2)))
+					c->layer2.layer[i].bslot[j] = 0;
+				else c->layer2.layer[k].bslot[j] = 0;
+			}
+		}
+		for (int i = 0; i < l2 / 2; ++i) {
+			for (int j = 0; j < bup; ++j) {
+				if (c1->layer2.layer[i].bslot[j] == 0)continue;
+				if ((c->layer2.layer[(mmhash(c1->layer2.layer[i].bslot[j], us2) % (uint32_t)(l2 * 2))].insert(c1->layer2.layer[i].bslot[j])) == 0)
+					mq.push(c1->layer2.layer[i].bslot[j]);
+				else
+					c->num = (c->num) + 1;
+			}
+			for (int j = 0; j < bup; ++j) {
+				if (c2->layer2.layer[i].bslot[j] == 0)continue;
+				if ((c->layer2.layer[(mmhash(c2->layer2.layer[i].bslot[j], us2) % (uint32_t)(l2 * 2))].insert(c2->layer2.layer[i].bslot[j])) == 0)
+					mq.push(c2->layer2.layer[i].bslot[j]);
+				else
+					c->num = (c->num) + 1;
+			}
+		}
+
+		while (!mq.empty()) {
+			if (!c->insert(mq.front())) {
+				Edge now_insert;
+				now_insert.src = src;
+				now_insert.dst = mykick;
+				sblacklist.push_back(now_insert);
+			}
+			mq.pop();
+		}
+		delete c0;
 		delete c1;
 		delete c2;
 		return c;
@@ -561,10 +909,10 @@ public:
 			}
 
 			if (state == 2) {
-				Cuckoo* cm = merge(slot[1], slot[2]);
+				Cuckoo* cm = merge(slot[0], slot[1], slot[2]);
 				slot[1] = NULL;
 				slot[2] = NULL;
-				slot[0] = merge(slot[0], cm);
+				slot[0] = cm;
 				slot[1] = new Cuckoo((slot[0]->len1) / 2, (slot[0]->len2) / 2, us1, us2);
 #ifdef TEST_MEM
 				cuckoo_mem += sizeof(Cuckoo) + ((slot[0]->len1) / 2 + (slot[0]->len2) / 2) * sizeof(Bucket);
@@ -658,7 +1006,7 @@ public:
 					now_insert.src = src;
 					now_insert.dst = mykick;
 					sblacklist.push_back(now_insert);
-				}
+			}
 				pv = slot[2];
 
 				if (!slot[0]->insert(*cp))
@@ -687,7 +1035,7 @@ public:
 				}
 				pt = -1;
 				return pt;
-			}
+		}
 
 
 			else {
@@ -710,9 +1058,9 @@ public:
 					}
 				}
 				assert(0);
-			}
+				}
 
-		}
+			}
 	}
 
 
@@ -728,17 +1076,18 @@ public:
 				if ((*it).src == e.src && (*it).dst == e.dst) {
 					return blist;
 				}
-			}
+				}
 			return 0;
-		}
+			}
 		else {
 			for (int i = 0; i < 3; ++i) {
+
 				key_type* pv = (key_type*)(&slot[i]);
 				if (*pv == e.dst || *(pv + 1) == e.dst)return pt;
 			}
 			return 0;
 		}
-	}
+		}
 
 	int query_successor(key_type src, key_type successor[], int r) {
 		int init = r;
@@ -772,6 +1121,7 @@ public:
 		if (pt == 0)return 0;
 
 		for (int i = 0; i < 3; ++i) {
+
 			key_type* pv = (key_type*)(&slot[i]);
 			if (0 != *pv) {
 				successor[r] = *pv;
@@ -877,6 +1227,9 @@ public:
 				if (state == 0) {
 					if (slot[0]->num == 0) {
 						delete slot[0];
+#ifdef TEST
+						++big_del;
+#endif
 						for (auto it = sblacklist.begin(); it != sblacklist.end(); ++it) {
 							if ((*it).src == e.src) {
 								slot[0] = NULL;
@@ -890,6 +1243,9 @@ public:
 					}
 					if ((slot[0]->len2 >= minc2) && nr < cthres) {
 						slot[0] = compress(slot[0]);
+#ifdef TEST
+						++big_del;
+#endif
 						return 1;
 					}
 					return 1;
@@ -898,6 +1254,9 @@ public:
 				else if (state == 1) {
 					if (slot[1]->num == 0) {
 						delete slot[1];
+#ifdef TEST
+						++big_del;
+#endif
 						slot[1] = NULL;
 						return 1;
 					}
@@ -931,6 +1290,9 @@ public:
 						}
 
 						delete slot[1];
+#ifdef TEST
+						++big_del;
+#endif
 						slot[1] = NULL;
 						return 1;
 					}
@@ -950,6 +1312,9 @@ public:
 
 					if (slot[sm]->num == 0) {
 						delete slot[sm];
+#ifdef TEST
+						++big_del;
+#endif
 						slot[1] = slot[bi];
 						slot[2] = NULL;
 						return 1;
@@ -1007,18 +1372,21 @@ public:
 										sblacklist.push_back(E);
 									}
 								}
+								}
 							}
-						}
 
 						delete slot[sm];
+#ifdef TEST
+						++big_del;
+#endif
 						slot[1] = slot[bi];
 						slot[2] = NULL;
 						return 1;
-					}
+						}
 					return 1;
+					}
 				}
 			}
-		}
 
 		bool flag = false;
 		bool f2 = false;
@@ -1043,13 +1411,13 @@ public:
 			}
 		}
 		return 2;
-	}
+		}
 
 	bool isSlotEmpty() {
 		return pt == 0;
 	}
 
-};
+	};
 
 
 static bSlot holekick;
@@ -1068,7 +1436,7 @@ public:
 				return 1;
 			}
 		return 0;
-	}
+}
 	bool insert(bSlot e) {
 		for (int i = 0; i < bup; ++i)
 			if (bslot[i].isSlotEmpty()) {
@@ -1077,6 +1445,11 @@ public:
 			}
 		return false;
 	}
+
+
+
+
+
 
 
 	int query(Edge e) {
@@ -1108,7 +1481,7 @@ public:
 		}
 		return 0;
 	}
-};
+	};
 
 class bLayer {
 public:
@@ -1152,7 +1525,12 @@ public:
 	}
 
 
+
 	bool insert(Edge item) {
+#ifdef TEST_KICK
+		l_kick = 0;
+		l_num += 1;
+#endif
 		int ir = layer1.insert(item);
 		if (ir) {
 			if (ir == 1)
@@ -1180,6 +1558,10 @@ public:
 				layer1.layer[pos1].bslot[xx % bup] = ins;
 				if (layer2.insert(kick)) {
 					++num;
+#ifdef TEST_KICK
+					l_kick = 500 + 1 - times;
+					l_hole += l_kick;
+#endif
 					return true;
 				}
 				--times;
@@ -1192,6 +1574,10 @@ public:
 				layer2.layer[pos2].bslot[xx % bup] = ins;
 				if (layer1.insert(kick)) {
 					++num;
+#ifdef TEST_KICK
+					l_kick = 500 + 1 - times;
+					l_hole += l_kick;
+#endif
 					return true;
 				}
 				--times;
@@ -1201,10 +1587,18 @@ public:
 			}
 		}
 		holekick = ins;
+#ifdef TEST_KICK
+		l_kick = 500;
+		l_hole += l_kick;
+#endif
 		return false;
 	}
 
 	bool insert(bSlot item) {
+#ifdef TEST_KICK
+		l_kick = 0;
+		l_num += 1;
+#endif
 		if (layer1.insert(item)) {
 			++num;
 			return true;
@@ -1226,6 +1620,10 @@ public:
 				layer1.layer[pos1].bslot[xx % bup] = ins;
 				if (layer2.insert(kick)) {
 					++num;
+#ifdef TEST_KICK
+					l_kick = 500 + 1 - times;
+					l_hole += l_kick;
+#endif
 					return true;
 				}
 				--times;
@@ -1238,6 +1636,10 @@ public:
 				layer2.layer[pos2].bslot[xx % bup] = ins;
 				if (layer1.insert(kick)) {
 					++num;
+#ifdef TEST_KICK
+					l_kick = 500 + 1 - times;
+					l_hole += l_kick;
+#endif
 					return true;
 				}
 				--times;
@@ -1247,8 +1649,14 @@ public:
 			}
 		}
 		holekick = ins;
+#ifdef TEST_KICK
+		l_kick = 500;
+		l_hole += l_kick;
+#endif
 		return false;
 	}
+
+
 
 	int query(Edge item) {
 		int ans = layer1.query(item);
@@ -1290,8 +1698,8 @@ public:
 		}
 		else
 			return 0;
-	}
-};
+		}
+	};
 
 class holemerge {
 public:
@@ -1310,6 +1718,7 @@ public:
 				for (int j = 0; j < link[T]->len1; ++j)
 					for (int k = 0; k < bup; ++k)
 					{
+
 						num += link[T]->layer1.layer[j].bslot[k].ret_num();
 						deno += link[T]->layer1.layer[j].bslot[k].ret_deno();
 					}
@@ -1317,14 +1726,15 @@ public:
 				for (int j = 0; j < link[T]->len2; ++j)
 					for (int k = 0; k < bup; ++k)
 					{
+
 						num += link[T]->layer2.layer[j].bslot[k].ret_num();
 						deno += link[T]->layer2.layer[j].bslot[k].ret_deno();
-					}
-
 			}
+
 		}
-		return num / deno;
 	}
+		return num / deno;
+}
 
 	holemerge(int _l1, int _l2, int _s1, int _s2) {
 		state = -1;
@@ -1358,10 +1768,10 @@ public:
 							{
 								delete ptr->layer1.layer[i].bslot[j].slot[ij];
 								ptr->layer1.layer[i].bslot[j].slot[ij] = NULL;
-							}
-						}
 					}
 				}
+		}
+	}
 
 
 			for (int i = 0; i < len2; ++i)
@@ -1427,7 +1837,7 @@ public:
 					else c->num = (c->num) + 1;
 				}
 			}
-		}
+				}
 		for (int i = 0; i < l2; ++i) {
 			int k = i + l2;
 			for (int j = 0; j < bup; ++j) {
@@ -1465,6 +1875,88 @@ public:
 		delete c1;
 		delete c2;
 		return c;
+			}
+
+	bCuckoo* merge(bCuckoo* c0, bCuckoo* c1, bCuckoo* c2) {
+		int l1 = c0->len1;
+		int l2 = c0->len2;
+		queue<bSlot> mq;
+		bCuckoo* c = new bCuckoo(l1 * 2, l2 * 2, s1, s2);
+		memcpy(c->layer1.layer, c0->layer1.layer, l1 * sizeof(bBucket));
+		memcpy(c->layer1.layer + l1, c0->layer1.layer, l1 * sizeof(bBucket));
+		memcpy(c->layer2.layer, c0->layer2.layer, l2 * sizeof(bBucket));
+		memcpy(c->layer2.layer + l2, c0->layer2.layer, l2 * sizeof(bBucket));
+		c->num = c0->num;
+		for (int i = 0; i < l1; ++i) {
+			int k = i + l1;
+			for (int j = 0; j < bup; ++j) {
+				if (c->layer1.layer[i].bslot[j].src == 0)continue;
+				if (i != (int)(mmhash(c->layer1.layer[i].bslot[j].src, s1) % (uint32_t)(l1 * 2))) {
+					c->layer1.layer[i].bslot[j].src = 0;
+					c->layer1.layer[i].bslot[j].pt = 0;
+					memset(c->layer1.layer[i].bslot[j].slot, 0, sizeof(Cuckoo*) * 3);
+				}
+				else {
+					c->layer1.layer[k].bslot[j].src = 0;
+					c->layer1.layer[k].bslot[j].pt = 0;
+					memset(c->layer1.layer[k].bslot[j].slot, 0, sizeof(Cuckoo*) * 3);
+				}
+			}
+		}
+
+		for (int i = 0; i < l1 / 2; ++i) {
+			for (int j = 0; j < bup; ++j) {
+				if (c1->layer1.layer[i].bslot[j].src == 0)continue;
+				if ((c->layer1.layer[(mmhash(c1->layer1.layer[i].bslot[j].src, s1) % (uint32_t)(l1 * 2))].insert(c1->layer1.layer[i].bslot[j])) == false)mq.push(c1->layer1.layer[i].bslot[j]);
+				else c->num = (c->num) + 1;
+			}
+			for (int j = 0; j < bup; ++j) {
+				if (c2->layer1.layer[i].bslot[j].src == 0)continue;
+				if ((c->layer1.layer[(mmhash(c2->layer1.layer[i].bslot[j].src, s1) % (uint32_t)(l1 * 2))].insert(c2->layer1.layer[i].bslot[j])) == false)mq.push(c2->layer1.layer[i].bslot[j]);
+				else c->num = (c->num) + 1;
+			}
+		}
+
+		for (int i = 0; i < l2; ++i) {
+			int k = i + l2;
+			for (int j = 0; j < bup; ++j) {
+				if (c->layer2.layer[i].bslot[j].src == 0)continue;
+				if (i != (int)(mmhash(c->layer2.layer[i].bslot[j].src, s2) % (uint32_t)(l2 * 2))) {
+					c->layer2.layer[i].bslot[j].src = 0;
+					c->layer2.layer[i].bslot[j].pt = 0;
+					memset(c->layer2.layer[i].bslot[j].slot, 0, sizeof(Cuckoo*) * 3);
+				}
+				else {
+					c->layer2.layer[k].bslot[j].src = 0;
+					c->layer2.layer[k].bslot[j].pt = 0;
+					memset(c->layer2.layer[k].bslot[j].slot, 0, sizeof(Cuckoo*) * 3);
+				}
+			}
+		}
+
+		for (int i = 0; i < l2 / 2; ++i) {
+			for (int j = 0; j < bup; ++j) {
+				if (c1->layer2.layer[i].bslot[j].src == 0)continue;
+				if ((c->layer2.layer[(mmhash(c1->layer2.layer[i].bslot[j].src, s2) % (uint32_t)(l2 * 2))].insert(c1->layer2.layer[i].bslot[j])) == false)mq.push(c1->layer2.layer[i].bslot[j]);
+				else c->num = (c->num) + 1;
+			}
+			for (int j = 0; j < bup; ++j) {
+				if (c2->layer2.layer[i].bslot[j].src == 0)continue;
+				if ((c->layer2.layer[(mmhash(c2->layer2.layer[i].bslot[j].src, s2) % (uint32_t)(l2 * 2))].insert(c2->layer2.layer[i].bslot[j])) == false)mq.push(c2->layer2.layer[i].bslot[j]);
+				else c->num = (c->num) + 1;
+			}
+		}
+
+		while (!mq.empty()) {
+			if (!c->insert(mq.front())) {
+				blacklist.push_back(holekick);
+			}
+			mq.pop();
+		}
+		delete c0;
+		delete c1;
+		delete c2;
+		return c;
 	}
 
 	int query_successor(key_type src, key_type successor[], int U) {
@@ -1498,7 +1990,9 @@ public:
 			int sum2 = query_successor(successor1[i], precursor1, 0);
 			for (int j = 0; j < sum2; ++j) {
 				e.src = precursor1[j];
-				if (query(e))++cnt;
+				if ((precursor1[j] != successor1[i]) && (successor1[i] != src) && (precursor1[j] != src)) {
+					if (query(e))++cnt;
+				}
 			}
 		}
 		return cnt;
@@ -1620,8 +2114,8 @@ public:
 				}
 			}
 
-			bCuckoo* cm = merge(link[1], link[2]);
-			link[0] = merge(link[0], cm);
+			bCuckoo* cm = merge(link[0], link[1], link[2]);
+			link[0] = cm;
 			link[1] = new bCuckoo(link[0]->len1 / 2, link[0]->len2 / 2, s1, s2);
 #ifdef TEST_MEM
 			cuckoo_mem += sizeof(bCuckoo) + (link[0]->len1 / 2 + link[0]->len2 / 2) * sizeof(bBucket);
@@ -1652,6 +2146,10 @@ public:
 			if (ans)return ans;
 		}
 
+
+
+
+
 		for (auto it = blacklist.begin(); it != blacklist.end(); ++it) {
 			if ((*it).src == e.src) {
 				int ans = (*it).query(e);
@@ -1660,6 +2158,9 @@ public:
 				return 0;
 			}
 		}
+
+
+
 		return 0;
 	}
 
@@ -1747,7 +2248,7 @@ public:
 	}
 
 
-	int del(Edge e) {
+	int main_del(Edge e) {
 		for (int II = 0; II <= state; ++II) {
 			int ans = link[II]->del(e);
 			if (ans) {
@@ -1764,20 +2265,29 @@ public:
 				if (state == 0) {
 					if (link[0]->num == 0) {
 						delete link[0];
+#ifdef TEST
+						++BIG_DEL;
+#endif
 						link[0] = NULL;
 						state = -1;
 						return ans;
-					}
+				}
 					if ((link[0]->len2 >= bminc2) && nr < bcthres) {
 						link[0] = compress(link[0]);
+#ifdef TEST
+						++BIG_DEL;
+#endif
 						return ans;
 					}
 					return ans;
-				}
+			}
 
 				else if (state == 1) {
 					if (link[1]->num == 0) {
 						delete link[1];
+#ifdef TEST
+						++BIG_DEL;
+#endif
 						link[1] = NULL;
 						state = 0;
 						return ans;
@@ -1800,6 +2310,9 @@ public:
 						}
 
 						delete link[1];
+#ifdef TEST
+						++BIG_DEL;
+#endif
 						link[1] = NULL;
 						state = 0;
 						return ans;
@@ -1820,6 +2333,9 @@ public:
 
 					if (link[sm]->num == 0) {
 						delete link[sm];
+#ifdef TEST
+						++BIG_DEL;
+#endif
 						link[1] = link[bi];
 						link[2] = NULL;
 						state = 1;
@@ -1861,14 +2377,17 @@ public:
 						}
 
 						delete link[sm];
+#ifdef TEST
+						++BIG_DEL;
+#endif
 						link[1] = link[bi];
 						link[2] = NULL;
 						state = 1;
 						return ans;
 					}
 					return ans;
+					}
 				}
-			}
 		}
 		for (auto it = blacklist.begin(); it != blacklist.end(); ++it) {
 			if ((*it).src == e.src) {
@@ -1884,9 +2403,174 @@ public:
 		return 0;
 	}
 
-};
+	void post_del() {
+		while (sblacklist.size() > sbl) {
+			auto it = sblacklist.begin();
+			Edge now_insert;
+			now_insert.src = (*it).src;
+			now_insert.dst = (*it).dst;
+			sblacklist.erase(it);
+			insert(now_insert);
+		}
+
+		while (blacklist.size() > bbl) {
+			auto it = blacklist.begin();
+			bSlot now_insert = *it;
+			blacklist.erase(it);
+			for (int i = state; i >= 0; --i) {
+				if ((link[i]->num < (link[i]->len1 + link[i]->len2) * bup * rate)) {
+					if (!link[i]->insert(now_insert))
+					{
+						blacklist.push_back(holekick);
+					}
+					break;
+				}
+			}
+		}
+
+	}
+
+	int del(Edge e) {
+		int ret = main_del(e);
+		post_del();
+		return ret;
+	}
+		};
+
+void test_merge1_err() {
+	count_type cnt;
+	TUPLES* items = read_data((folder + filenames[0]).c_str(), 100000000, &cnt);
+	std::cout << "The number of packet:" << cnt << std::endl;
+	Edge* edge = new Edge[cnt];
+	for (count_type i = 0; i < cnt; ++i)
+		memcpy(&edge[i], &items[i], sizeof(Edge));
+	set<key_type> ed;
+	for (count_type i = 0; i < cnt; ++i)
+		ed.insert(edge[i].dst);
+	int edsize = ed.size();
+	cout << "edsize:  " << edsize << endl;
+	mergehash1 hole(4, 2, 0, 221);
+	asum = 0;
+	int ernum = 0;
+	int ernum2 = 0;
+	set<key_type>::iterator it;
+	for (it = ed.begin(); it != ed.end(); it++) {
+		hole.insert(*it);
+
+		if (!hole.query(*it))
+			++ernum;
+	}
+	cout << "error num:  " << ernum << endl;
+	for (it = ed.begin(); it != ed.end(); it++) {
+		if (!hole.query(*it))
+			++ernum2;
+	}
+	cout << "sum:  " << asum << endl;
+	cout << "error num 2 :   " << ernum2 << endl;
+	delete[] items;
+	delete[] edge;
+}
 
 
+void test_mergehash1_err2() {
+	count_type cnt;
+	TUPLES* items = read_data((folder + filenames[0]).c_str(), 100000000, &cnt);
+	std::cout << "The number of packet:" << cnt << std::endl;
+	Edge* edge = new Edge[cnt];
+	for (count_type i = 0; i < cnt; ++i)
+		memcpy(&edge[i], &items[i], sizeof(Edge));
+	mergehash1 hole(bl1, bl2, 0, 221);
+	asum = 0;
+	int ernum = 0;
+	int ernum2 = 0;
+	for (int i = 0; i < cnt; ++i) {
+		hole.insert(edge[i].dst);
+	}
+	for (int i = 0; i < cnt; ++i) {
+		if (!hole.query(edge[i].dst))
+			++ernum2;
+	}
+	cout << "sum:  " << asum << endl;
+	cout << "error num 2 :   " << ernum2 << endl;
+	delete[] items;
+	delete[] edge;
+}
+
+
+void test_merge1_th() {
+	count_type cnt;
+	TUPLES* items = read_data((folder + filenames[0]).c_str(), 100000000, &cnt);
+	std::cout << "The number of packet:" << cnt << std::endl;
+	Edge* edge = new Edge[cnt];
+	for (count_type i = 0; i < cnt; ++i)
+		memcpy(&edge[i], &items[i], sizeof(Edge));
+	mergehash1 hole(4, 2, 0, 221);
+	auto t1 = steady_clock::now();
+	for (int i = 0; i < cnt; ++i) {
+		hole.insert(edge[i].dst);
+	}
+	auto t2 = steady_clock::now();
+	auto t3 = duration_cast<microseconds>(t2 - t1).count();
+	cout << "Insert throughput: " << cnt / (1.0 * t3) << " MIPs" << endl;
+	t1 = steady_clock::now();
+	for (int i = 0; i < cnt; ++i) {
+		hole.query(edge[i].dst);
+	}
+	t2 = steady_clock::now();
+	t3 = duration_cast<microseconds>(t2 - t1).count();
+	cout << "Query throughput: " << cnt / (1.0 * t3) << " MIPs" << endl;
+	delete[] items;
+	delete[] edge;
+}
+
+
+void test_merge1_rate() {
+	count_type cnt;
+	TUPLES* items = read_data((folder + filenames[0]).c_str(), 100000000, &cnt);
+	std::cout << "The number of packet:" << cnt << std::endl;
+	Edge* edge = new Edge[cnt];
+	for (count_type i = 0; i < cnt; ++i)
+		memcpy(&edge[i], &items[i], sizeof(Edge));
+	mergehash1 hole(4, 2, 0, 221);
+	string fname = "./CAIDA.csv";
+	ofstream fout;
+	fout.open(fname);
+	for (int i = 0; i < cnt; ++i) {
+		hole.insert(edge[i].dst);
+		fout << hole.test_rate() << endl;
+	}
+	fout.close();
+	delete[] items;
+	delete[] edge;
+}
+
+void test_merge1_rate2() {
+	count_type cnt;
+	TUPLES* items = read_data((folder + filenames[0]).c_str(), 100000000, &cnt);
+	std::cout << "The number of packet:" << cnt << std::endl;
+	Edge* edge = new Edge[cnt];
+	for (count_type i = 0; i < cnt; ++i)
+		memcpy(&edge[i], &items[i], sizeof(Edge));
+	set<key_type> ed;
+	for (count_type i = 0; i < cnt; ++i)
+		ed.insert(edge[i].dst);
+	int edsize = ed.size();
+	cout << "edsize:  " << edsize << endl;
+	mergehash1 hole(4, 2, 0, 221);
+	set<key_type>::iterator it;
+	string fname = "./UNI.csv";
+	ofstream fout;
+	fout.open(fname);
+	int i = 0;
+	for (it = ed.begin(); it != ed.end(); it++) {
+		hole.insert(*it);
+		++i;
+		fout << i << "," << hole.test_rate() << endl;
+	}
+	fout.close();
+	delete[] items;
+	delete[] edge;
+}
 
 void test_err() {
 	sblacklist.clear();
@@ -1950,7 +2634,7 @@ void test_th() {
 	cout << "Query throughput: " << cnt / (1.0 * t3) << " MIPs" << endl;
 	delete[] items;
 	delete[] edge;
-}
+	}
 
 
 void test_hole_err() {
@@ -2091,13 +2775,11 @@ void test_hole_th() {
 }
 
 void test_hole_time() {
+	cout << "CuckooGrpah" << endl;
 	sblacklist.clear();
 	count_type cnt;
-	TUPLES* items = read_data((folder + filenames[0]).c_str(), 100000000, &cnt);
-	std::cout << "The number of packet:" << cnt << std::endl;
-	Edge* edge = new Edge[cnt];
-	for (count_type i = 0; i < cnt; ++i)
-		memcpy(&edge[i], &items[i], sizeof(Edge));
+
+	Edge* edge = read_NotreDame_data(&cnt, 100000000);
 	holemerge hole(bl1, bl2, 0, 221);
 	int sum = 0;
 	clock_t t1 = clock();
@@ -2115,7 +2797,6 @@ void test_hole_time() {
 	t3 = t2 - t1;
 	cout << "Query average time: " << (double)t3 / (double)cnt << endl;
 	cout << "sum: " << sum << endl;
-	delete[] items;
 	delete[] edge;
 }
 
@@ -2692,6 +3373,7 @@ void test_edge_new(int len)
 	fout.close();
 	printf("test edge end\n");
 	printf("sum:  %d\n", sum);
+
 }
 
 int build_query() {
@@ -2809,15 +3491,14 @@ void test_Hole_rate() {
 #ifdef TEST_MEM
 void test_Hole_mem() {
 	count_type cnt;
-	TUPLES* items = read_data((folder + filenames[0]).c_str(), 100000000, &cnt);
-	std::cout << "The number of packet:" << cnt << std::endl;
-	Edge* edge = new Edge[cnt];
-	for (count_type i = 0; i < cnt; ++i)
-		memcpy(&edge[i], &items[i], sizeof(Edge));
+
+	Edge* edge = read_wiki_data(&cnt, 100000000);
 	set<Edge, EdgeLess> ed;
 	ed.insert(edge, edge + cnt);
 	int edsize = ed.size();
 	cout << "edsize:  " << edsize << endl;
+	int mout = (edsize / 1000000) + 1;
+
 	holemerge hole(bl1, bl2, 0, 221);
 #ifdef TEST_MEM 
 	cuckoo_mem = sizeof(holemerge) + sizeof(sblacklist) + sbl * sizeof(Edge) + bbl * sizeof(bSlot);
@@ -2826,14 +3507,19 @@ void test_Hole_mem() {
 	ofstream fout;
 	fout.open(fname);
 	int i = 0;
+	int small = 0;
+	int big = 0;
 	for (auto it = ed.begin(); it != ed.end(); it++) {
 		hole.insert(*it);
 		++i;
-
-		fout << i << "," << ((double)cuckoo_mem) / 1000 << endl;
+		if (sblacklist.size() > sbl)++small;
+		if (hole.blacklist.size() > bbl)++big;
+		if (0 == ((i - 1) % mout))
+			fout << ((double)cuckoo_mem) / 1000 << endl;
 	}
+	cout << "small: " << small << endl;
+	cout << "big: " << big << endl;
 	fout.close();
-	delete[] items;
 	delete[] edge;
 #ifdef TEST_MEM
 	cuckoo_mem = 0;
@@ -2890,6 +3576,7 @@ void test_pt() {
 	set<key_type> dsrc;
 	for (count_type i = 0; i < cnt; ++i)
 		dsrc.insert(edge[i].src);
+
 	for (auto it = ed.begin(); it != ed.end(); it++) {
 		hole.insert(*it);
 	}
@@ -2936,6 +3623,7 @@ void test_pt2() {
 	set<key_type> dsrc;
 	for (count_type i = 0; i < cnt; ++i)
 		dsrc.insert(edge[i].src);
+
 	for (auto it = ed.begin(); it != ed.end(); it++) {
 		hole.insert(*it);
 	}
@@ -2988,6 +3676,7 @@ void test_pt3() {
 	set<key_type> dsrc;
 	for (count_type i = 0; i < cnt; ++i)
 		dsrc.insert(edge[i].src);
+
 #ifdef TEST_MEM
 	cuckoo_mem = sizeof(holemerge);
 	int i = 0;
@@ -3192,6 +3881,7 @@ void test_edge_new_par(int len)
 	fout.close();
 	printf("test edge end\n");
 	printf("sum:  %d\n", sum);
+
 }
 
 void test_wiki_time() {
@@ -3377,7 +4067,219 @@ void test_time_wind_vs_ours_multi() {
 	delete[] edge;
 }
 
+void tcm_test_time_multi() {
+	Edge edge;
+	count_type cnt;
+	int mul = 3;
+	double insert[10];
+	double query[10];
+	for (int i = 0; i < 10; ++i) {
+		insert[i] = 0;
+		query[i] = 0;
+	}
+	Edge* EE = read_stackoverflow_data(&cnt, 100000000);
+	cout << "cnt: " << cnt << endl;
 
+
+	int fin = 63000;
+	set<key_type> ed;
+	for (count_type i = 0; i < fin * 1000; ++i)
+		ed.insert(asrc[i]);
+	int edsize = ed.size();
+
+	ofstream fout;
+	fout.open("tcm_test_time_multi.txt", ios::out);
+
+	for (int num = 5 * 7000; num <= fin; num += 7000) {
+		cnt = num * 1000;
+		fout << "DATA SIZE: " << cnt << endl;
+		for (int i = 0; i < mul; ++i) {
+			TCM hole(19200, 19200, 9, false);
+			int sum = 0;
+			clock_t time_start = clock();
+			for (int i = 0; i < cnt; ++i) {
+				string s1 = to_string(asrc[i]);
+				string s2 = to_string(adst[i]);
+				hole.insert((unsigned char*)(s1.c_str()), (unsigned char*)(s2.c_str()), 1, s1.length(), s2.length());
+			}
+			clock_t time_end = clock();
+			long time = time_end - time_start;
+			insert[i] = (double)time / (double)cnt;
+			cout << "sum: " << sum << endl;
+			sum = 0;
+			clock_t time_start_2 = clock();
+			for (int i = 0; i < cnt; ++i) {
+				string s1 = to_string(asrc[i]);
+				string s2 = to_string(adst[i]);
+				sum += hole.query((unsigned char*)(s1.c_str()), (unsigned char*)(s2.c_str()), s1.length(), s2.length());
+			}
+			clock_t time_end_2 = clock();
+			long time3 = time_end_2 - time_start_2;
+			query[i] = (double)time3 / (double)cnt;
+			cout << "sum: " << sum << endl;
+
+		}
+
+		double average_insert = 0;
+		double average_query = 0;
+		for (int i = 0; i < mul; ++i) {
+			fout << "insert" << i << ":  " << insert[i] << endl;
+			average_insert += insert[i];
+			fout << "query" << i << ":  " << query[i] << endl;
+			average_query += query[i];
+	}
+		average_insert = average_insert / mul;
+		average_query = average_query / mul;
+		fout << "average_insert:     " << average_insert << endl;
+		fout << "average_query:      " << average_query << endl;
+
+	}
+	fout.close();
+	delete[] EE;
+}
+
+void gss_test_time_multi() {
+	Edge edge;
+	count_type cnt;
+	int mul = 3;
+	double insert[10];
+	double query[10];
+	for (int i = 0; i < 10; ++i) {
+		insert[i] = 0;
+		query[i] = 0;
+	}
+	Edge* EE = read_stackoverflow_data(&cnt, 100000000);
+	cout << "cnt: " << cnt << endl;
+
+
+	int fin = 63000;
+	set<key_type> ed;
+	for (count_type i = 0; i < fin * 1000; ++i)
+		ed.insert(asrc[i]);
+	int edsize = ed.size();
+
+	ofstream fout;
+	fout.open("gss_test_time_multi.txt", ios::out);
+
+	for (int num = 7000; num <= fin; num += 7000) {
+		cnt = num * 1000;
+		fout << "DATA SIZE: " << cnt << endl;
+		for (int i = 0; i < mul; ++i) {
+			GSS hole(19200, 16, 16, 2, 16, false);
+			int sum = 0;
+			clock_t time_start = clock();
+			for (int i = 0; i < cnt; ++i) {
+				string s1 = to_string(asrc[i]);
+				string s2 = to_string(adst[i]);
+				hole.insert(s1, s2, 1);
+			}
+			clock_t time_end = clock();
+			long time = time_end - time_start;
+			insert[i] = (double)time / (double)cnt;
+			cout << "sum: " << sum << endl;
+			sum = 0;
+			clock_t time_start_2 = clock();
+			for (int i = 0; i < cnt; ++i) {
+				string s1 = to_string(asrc[i]);
+				string s2 = to_string(adst[i]);
+				sum += hole.edgeQuery(s1, s2);
+			}
+			clock_t time_end_2 = clock();
+			long time3 = time_end_2 - time_start_2;
+			query[i] = (double)time3 / (double)cnt;
+			cout << "sum: " << sum << endl;
+
+	}
+
+		double average_insert = 0;
+		double average_query = 0;
+		for (int i = 0; i < mul; ++i) {
+			fout << "insert" << i << ":  " << insert[i] << endl;
+			average_insert += insert[i];
+			fout << "query" << i << ":  " << query[i] << endl;
+			average_query += query[i];
+		}
+		average_insert = average_insert / mul;
+		average_query = average_query / mul;
+		fout << "average_insert:     " << average_insert << endl;
+		fout << "average_query:      " << average_query << endl;
+
+}
+	fout.close();
+	delete[] EE;
+}
+
+void Auxo_test_time_multi() {
+	Edge edge;
+	count_type cnt;
+	int mul = 3;
+	double insert[10];
+	double query[10];
+	for (int i = 0; i < 10; ++i) {
+		insert[i] = 0;
+		query[i] = 0;
+	}
+	int fpl = 16, cols = 4, candiNum = 16, width = 100;
+	Edge* EE = read_stackoverflow_data(&cnt, 100000000);
+	cout << "cnt: " << cnt << endl;
+
+
+	int fin = 63000;
+	set<key_type> ed;
+	for (count_type i = 0; i < fin * 1000; ++i)
+		ed.insert(asrc[i]);
+	int edsize = ed.size();
+
+	ofstream fout;
+	fout.open("Auxo_test_time_multi.txt", ios::out);
+
+	for (int num = 7000; num <= fin; num += 7000) {
+		cnt = num * 1000;
+		fout << "DATA SIZE: " << cnt << endl;
+		for (int i = 0; i < mul; ++i) {
+			Auxo hole(width, cols, candiNum, fpl);
+			int sum = 0;
+			clock_t time_start = clock();
+			for (int i = 0; i < cnt; ++i) {
+				string s1 = to_string(asrc[i]);
+				string s2 = to_string(adst[i]);
+				sum += hole.insert(s1, s2, 1);
+			}
+			clock_t time_end = clock();
+			long time = time_end - time_start;
+			insert[i] = (double)time / (double)cnt;
+			cout << "sum: " << sum << endl;
+			sum = 0;
+			clock_t time_start_2 = clock();
+			for (int i = 0; i < cnt; ++i) {
+				string s1 = to_string(asrc[i]);
+				string s2 = to_string(adst[i]);
+				sum += hole.edgeQuery(s1, s2);
+			}
+			clock_t time_end_2 = clock();
+			long time3 = time_end_2 - time_start_2;
+			query[i] = (double)time3 / (double)cnt;
+			cout << "sum: " << sum << endl;
+
+		}
+
+		double average_insert = 0;
+		double average_query = 0;
+		for (int i = 0; i < mul; ++i) {
+			fout << "insert" << i << ":  " << insert[i] << endl;
+			average_insert += insert[i];
+			fout << "query" << i << ":  " << query[i] << endl;
+			average_query += query[i];
+		}
+		average_insert = average_insert / mul;
+		average_query = average_query / mul;
+		fout << "average_insert:     " << average_insert << endl;
+		fout << "average_query:      " << average_query << endl;
+
+	}
+	fout.close();
+	delete[] EE;
+}
 
 void hole_test_time_multi() {
 	Edge edge;
@@ -3389,11 +4291,11 @@ void hole_test_time_multi() {
 		insert[i] = 0;
 		query[i] = 0;
 	}
-	Edge* EE = read_wiki_data(&cnt, 100000000);
+	Edge* EE = read_stackoverflow_data(&cnt, 100000000);
 	cout << "cnt: " << cnt << endl;
 
 
-	int fin = 24000;
+	int fin = 63000;
 	set<key_type> ed;
 	for (count_type i = 0; i < fin * 1000; ++i)
 		ed.insert(asrc[i]);
@@ -3402,7 +4304,7 @@ void hole_test_time_multi() {
 	ofstream fout;
 	fout.open("hole_test_time_multi.txt", ios::out);
 
-	for (int num = 12000; num <= fin; num += 3000) {
+	for (int num = 7000; num <= fin; num += 7000) {
 		cnt = num * 1000;
 		fout << "DATA SIZE: " << cnt << endl;
 		for (int i = 0; i < mul; ++i) {
@@ -3412,7 +4314,7 @@ void hole_test_time_multi() {
 			cout << "l1:  " << l1 << endl;
 			cout << "l2:  " << l2 << endl;
 			sblacklist.clear();
-			holemerge hole(l1, l2, 0, 221);
+			holemerge hole(bl1, bl2, 0, 221);
 			int sum = 0;
 			clock_t time_start = clock();
 			for (int i = 0; i < cnt; ++i) {
@@ -3530,7 +4432,7 @@ void wind_test_time_multi() {
 
 
 
-void test_tiangles_2() {
+void test_triangles_2() {
 	int csl = 400;
 	count_type cnt;
 	int mul = 1;
@@ -3617,6 +4519,8 @@ void test_tiangles_2() {
 		}
 	}
 
+
+
 	cout << "sum1: " << sum1 << endl;
 	cout << "sum2: " << sum2 << endl;
 	delete[] EE;
@@ -3624,21 +4528,21 @@ void test_tiangles_2() {
 
 }
 
-void test_tiangles_1() {
+void test_triangles_1() {
 	int csl = 400;
 	count_type cnt;
 	int mul = 3;
-	int beg = 600000;
-	int inter = 800000 - 600000;
+	int beg = 20000000;
+	int inter = 24000000 - 20000000;
 	int sample_num = 5000;
-	Edge* EE = read_NotreDame_data(&cnt, 100000000);
+	Edge* EE = read_stackoverflow_data(&cnt, 100000000);
 	set<key_type> edg;
 	edg.clear();
 	set<Edge, EdgeLess> ed;
 	ed.clear();
 
 	ofstream fout;
-	fout.open("test_tiangles_1.txt", ios::out);
+	fout.open("test_triangles_1.txt", ios::out);
 
 	Chandelier* wind;
 	holemerge hole(bl1, bl2, 0, 221);
@@ -3716,6 +4620,7 @@ void test_tiangles_1() {
 	}
 
 
+
 	cout << "sum1: " << sum1 << endl;
 	cout << "sum2: " << sum2 << endl;
 	fout.close();
@@ -3724,17 +4629,17 @@ void test_tiangles_1() {
 
 }
 
-void test_tiangles_co() {
+void test_triangles_co() {
 	int csl = 400;
 	count_type cnt;
 	int mul = 3;
-	int beg = 600000;
-	int inter = 800000 - 600000;
+	int beg = 20000000;
+	int inter = 24000000 - 20000000;
 	int sample_num = 5000;
 
 	assert(need.size() == mul * sample_num * 5);
 
-	Edge* EE = read_NotreDame_data(&cnt, 100000000);
+	Edge* EE = read_stackoverflow_data(&cnt, 100000000);
 	set<key_type> edg;
 	edg.clear();
 	set<Edge, EdgeLess> ed;
@@ -3743,7 +4648,7 @@ void test_tiangles_co() {
 	ofstream fout;
 	fout.open("test_tiangles_co.txt", ios::out);
 
-	holemerge hole(14108, 7054, 0, 221);
+	holemerge hole(245816, 122908, 0, 221);
 
 	int inum = 0;
 	int sum1 = 0;
@@ -3751,6 +4656,7 @@ void test_tiangles_co() {
 	for (int itt = 0; itt < cnt; ++itt) {
 		if (ed.count(EE[itt]))continue;
 		ed.insert(EE[itt]);
+
 		hole.insert(EE[itt]);
 		edg.insert(EE[itt].dst);
 		edg.insert(EE[itt].src);        inum = ed.size();
@@ -3768,6 +4674,9 @@ void test_tiangles_co() {
 				}
 				auto it = sample.begin();
 				int cyc = sample.size();
+
+
+
 				it = sample.begin();
 				clock_t time_start_2 = clock();
 				for (int i = 0; i < cyc; ++i) {
@@ -3789,6 +4698,7 @@ void test_tiangles_co() {
 		}
 	}
 
+
 	assert(need.empty());
 	cout << "sum1: " << sum1 << endl;
 	cout << "sum2: " << sum2 << endl;
@@ -3802,10 +4712,15 @@ void test_time_succ() {
 	int csl = 400;
 	count_type cnt;
 	int mul = 3;
-	int beg = 4100000;
-	int inter = 5400000 - 4100000;
+	int beg = 530000;
+	int inter = 610000 - 530000;
 	int sample_num = 5000;
-	Edge* EE = read_wiki_data(&cnt, 100000000);
+	TUPLES* items = read_data((folder + filenames[0]).c_str(), 100000000, &cnt);
+	std::cout << "The number of packet:" << cnt << std::endl;
+	Edge* EE = new Edge[cnt];
+	for (count_type i = 0; i < cnt; ++i)
+		memcpy(&EE[i], &items[i], sizeof(Edge));
+	std::cout << "The number of packet:" << cnt << std::endl;
 	set<key_type> edg;
 	set<Edge, EdgeLess> ed;
 	ofstream fout;
@@ -3818,6 +4733,7 @@ void test_time_succ() {
 	Chandelier* wind;
 	holemerge hole(bl1, bl2, 0, 221);
 	wind = new Chandelier(csl);
+
 	int inum = 0;
 	int sum1 = 0;
 	int sum2 = 0;
@@ -3888,6 +4804,7 @@ void test_time_succ() {
 			fout << "Ours Average Average time: " << ours_average << endl;
 		}
 	}
+
 	cout << "sum1: " << sum1 << endl;
 	for (int ii = 0; ii < sum1; ++ii)
 		fr1 << successor[ii] << endl;
@@ -3899,16 +4816,22 @@ void test_time_succ() {
 	fr2.close();
 	delete[] EE;
 	delete wind;
+	delete[] items;
 }
 
 void test_time_succ_co() {
 	int csl = 400;
 	count_type cnt;
 	int mul = 3;
-	int beg = 4100000;
-	int inter = 5400000 - 4100000;
+	int beg = 530000;
+	int inter = 610000 - 530000;
 	int sample_num = 5000;
-	Edge* EE = read_wiki_data(&cnt, 100000000);
+	TUPLES* items = read_data((folder + filenames[0]).c_str(), 100000000, &cnt);
+	std::cout << "The number of packet:" << cnt << std::endl;
+	Edge* EE = new Edge[cnt];
+	for (count_type i = 0; i < cnt; ++i)
+		memcpy(&EE[i], &items[i], sizeof(Edge));
+	std::cout << "The number of packet:" << cnt << std::endl;
 	set<key_type> edg;
 	set<Edge, EdgeLess> ed;
 	ofstream fout;
@@ -3918,13 +4841,15 @@ void test_time_succ_co() {
 	fr1.open("fr1_co.txt", ios::out);
 	fr2.open("fr2_co.txt", ios::out);
 
-	holemerge hole(73984, 36992, 0, 221);
+	holemerge hole(28136, 14068, 0, 221);
+
 	int inum = 0;
 	int sum1 = 0;
 	int sum2 = 0;
 	for (int it = 0; it < cnt; ++it) {
 		if (ed.count(EE[it]))continue;
 		ed.insert(EE[it]);
+
 		hole.insert(EE[it]);
 		edg.insert(EE[it].src);
 		inum = ed.size();
@@ -3942,6 +4867,8 @@ void test_time_succ_co() {
 				}
 				auto it = sample.begin();
 				int cyc = sample.size();
+
+
 
 				it = sample.begin();
 				clock_t time_start_2 = clock();
@@ -3974,6 +4901,7 @@ void test_time_succ_co() {
 	fr1.close();
 	fr2.close();
 	delete[] EE;
+	delete[] items;
 }
 
 void test_time_pre() {
@@ -4134,6 +5062,9 @@ void test_time_pre_co() {
 				}
 				auto it = sample.begin();
 				int cyc = sample.size();
+
+
+
 				it = sample.begin();
 				clock_t time_start_2 = clock();
 				for (int i = 0; i < cyc; ++i) {
@@ -4154,6 +5085,8 @@ void test_time_pre_co() {
 			fout << "Ours Average Average time: " << ours_average << endl;
 		}
 	}
+
+
 
 	cout << "sum1: " << sum1 << endl;
 	for (int ii = 0; ii < sum1; ++ii)
@@ -4347,14 +5280,14 @@ void test_sssp() {
 void test_sssp_new() {
 	chain* tempC = new chain();
 	int csl = 400;
-	int L1 = 16000;
+	int L1 = 245816;
 	int L2 = L1 / 2;
 	count_type cnt;
 	int mul = 3;
 	int maxtopk = 4000;
 	int rd = 10;
 	key_type topk[10001] = { 0 };
-	Edge* EE = read_NotreDame_data(&cnt, 100000000);
+	Edge* EE = read_stackoverflow_data(&cnt, 100000000);
 	set<key_type> edg;
 	set<Edge, EdgeLess> ed;
 	unordered_map<key_type, key_type> node;
@@ -4408,7 +5341,7 @@ void test_sssp_new() {
 
 
 	for (int TT = 1; TT <= 8; ++TT) {
-		int num = 500 * TT;
+		int num = 70 * TT;
 		fout << "num:     " << num << endl;
 		double average;
 
@@ -4533,9 +5466,6 @@ void test_sssp_new() {
 		cout << "ours end" << endl;
 	}
 
-
-
-
 	sblacklist.clear();
 	ed.clear();
 	holemerge hole2(L1, L2, 0, 221);
@@ -4546,7 +5476,7 @@ void test_sssp_new() {
 	}
 	cout << "hole2.state:  " << hole2.state << endl;
 	for (int TT = 1; TT <= 8; ++TT) {
-		int num = 500 * TT;
+		int num = 70 * TT;
 		fout << "num:     " << num << endl;
 		double average;
 		average = 0;
@@ -4680,6 +5610,547 @@ void test_merge_cost() {
 		fout << "L=" << L << " :" << endl;
 		fout << "average merge time:  " << average << endl;
 	}
+}
+
+#ifdef TEST
+void test_big_del() {
+	big_del = 0;
+	BIG_DEL = 0;
+	count_type cnt;
+	Edge* EE = read_NotreDame_data(&cnt, 100000000);
+	holemerge hole(bl1, bl2, 0, 221);
+	Edge ee;
+	int sum = 0;
+	clock_t time_start = clock();
+	for (int i = 0; i < cnt; ++i) {
+		sum += hole.insert(EE[i]);
+		if ((((i + 1) % 5) == 2) && i != 1)
+			hole.insert(ee);
+		if (((i + 1) % 5) == 0) {
+			hole.del(EE[i]);
+			++hole_del;
+			ee = EE[i];
+		}
+	}
+	clock_t time_end = clock();
+	long time = (time_end - time_start);
+	cout << "hole del num: " << hole_del << endl;
+	cout << "S-CHT del num: " << big_del << endl;
+	cout << "L-CHT del num: " << BIG_DEL << endl;
+	cout << "S-CHT del rate: " << (double)big_del / (double)hole_del << endl;
+	cout << "L-CHT del rate: " << (double)BIG_DEL / (double)hole_del << endl;
+	cout << "average operate time: " << (double)time / (double)(cnt + hole_del);
+	delete[] EE;
+}
+#endif
+
+void test_merge_cost_2() {
+	count_type cnt;
+	int mul = 10;
+	bSlot use;
+	Cuckoo* c0;
+	Cuckoo* c1;
+	Cuckoo* c2;
+	ofstream fout;
+	ofstream fr1;
+	fr1.open("fr1.txt", ios::out);
+	fout.open("old_merge_time.txt", ios::out);
+
+	Edge* EE = read_stackoverflow_data(&cnt, 100000000);
+	set<key_type> node; node.clear();
+	for (int i = 0; i < cnt; ++i) {
+		node.insert(EE[i].dst);
+	}
+	cout << "node.size(): " << node.size() << endl;
+	for (int L = 4; L <= 1024 * 16; L = L * 4) {
+		long time = 0;
+		int tt = 0;
+		for (int mm = 0; mm < mul; ++mm) {
+			sblacklist.clear();
+			c0 = new Cuckoo(L, L / 2, us1, us2);
+			c1 = new Cuckoo(L / 2, L / 4, us1, us2);
+			c2 = new Cuckoo(L / 2, L / 4, us1, us2);
+			for (auto it = node.begin(); it != node.end(); ) {
+				if (c1->num < (c1->len1 + c1->len2) * bup * rate)
+				{
+					c1->insert(*it); ++it;
+				}
+				if (it == node.end()) { cout << "false!" << endl; break; }
+				if (c2->num < (c2->len1 + c2->len2) * bup * rate)
+				{
+					c2->insert(*it); ++it;
+				}
+				if (c0->num < (c0->len1 + c0->len2) * bup * rate)
+				{
+					c0->insert(*it); ++it;
+				}
+				if ((c1->num >= (c1->len1 + c1->len2) * bup * rate) && (c2->num >= (c2->len1 + c2->len2) * bup * rate) && (c0->num >= (c0->len1 + c0->len2) * bup * rate)) {
+					++tt;
+					clock_t time_start = clock();
+					Cuckoo* mid = use.merge(c1, c2);
+					Cuckoo* c = use.merge(c0, mid);
+					clock_t time_end = clock();
+					time = time + (time_end - time_start);
+					for (int j = 0; j < L * 2; ++j)
+						for (int k = 0; k < bup; ++k)
+						{
+							fr1 << c->layer1.layer[j].bslot[k];
+						}
+					for (int j = 0; j < L; ++j)
+						for (int k = 0; k < bup; ++k) {
+							fr1 << c->layer2.layer[j].bslot[k];
+						}
+					delete c;
+					break;
+				}
+			}
+		}
+		double average = (double)time / (double)mul;
+		if (tt != mul) { cout << "false" << endl; }
+		assert(tt == mul);
+		fout << "L=" << L << " :" << endl;
+		fout << "average merge time:  " << average << endl;
+	}
+
+	fout.close();
+	fr1.close();
+}
+
+void test_merge_cost_3() {
+	count_type cnt;
+	int mul = 10;
+	bSlot use;
+	Cuckoo* c0;
+	Cuckoo* c1;
+	Cuckoo* c2;
+	ofstream fout;
+	ofstream fr1;
+	fr1.open("fr2.txt", ios::out);
+	fout.open("new_merge_time.txt", ios::out);
+
+	Edge* EE = read_stackoverflow_data(&cnt, 100000000);
+	set<key_type> node; node.clear();
+	for (int i = 0; i < cnt; ++i) {
+		node.insert(EE[i].dst);
+	}
+	cout << "node.size(): " << node.size() << endl;
+	for (int L = 4; L <= 1024 * 16; L = L * 4) {
+		long time = 0;
+		int tt = 0;
+		for (int mm = 0; mm < mul; ++mm) {
+			sblacklist.clear();
+			c0 = new Cuckoo(L, L / 2, us1, us2);
+			c1 = new Cuckoo(L / 2, L / 4, us1, us2);
+			c2 = new Cuckoo(L / 2, L / 4, us1, us2);
+			for (auto it = node.begin(); it != node.end(); ) {
+				if (c1->num < (c1->len1 + c1->len2) * bup * rate)
+				{
+					c1->insert(*it); ++it;
+				}
+				if (it == node.end()) { cout << "false!" << endl; break; }
+				if (c2->num < (c2->len1 + c2->len2) * bup * rate)
+				{
+					c2->insert(*it); ++it;
+				}
+				if (it == node.end()) { cout << "false!" << endl; break; }
+				if (c0->num < (c0->len1 + c0->len2) * bup * rate)
+				{
+					c0->insert(*it); ++it;
+				}
+				if (it == node.end()) { cout << "false!" << endl; break; }
+				if ((c1->num >= (c1->len1 + c1->len2) * bup * rate) && (c2->num >= (c2->len1 + c2->len2) * bup * rate) && (c0->num >= (c0->len1 + c0->len2) * bup * rate)) {
+					++tt;
+					clock_t time_start = clock();
+					Cuckoo* c = use.merge(c0, c1, c2);
+					clock_t time_end = clock();
+					time = time + (time_end - time_start);
+					for (int j = 0; j < L * 2; ++j)
+						for (int k = 0; k < bup; ++k)
+						{
+							fr1 << c->layer1.layer[j].bslot[k];
+						}
+					for (int j = 0; j < L; ++j)
+						for (int k = 0; k < bup; ++k) {
+							fr1 << c->layer2.layer[j].bslot[k];
+						}
+					delete c;
+					break;
+				}
+			}
+		}
+		double average = (double)time / (double)mul;
+		if (tt != mul) { cout << "false" << endl; }
+		assert(tt == mul);
+		fout << "L=" << L << " :" << endl;
+		fout << "average merge time:  " << average << endl;
+	}
+
+	fout.close();
+	fr1.close();
+}
+
+void test_merge_cost_L_CHT_new() {
+	count_type cnt;
+	int mul = 10;
+	holemerge use(bl1, bl2, 0, 221);
+	bCuckoo* c0;
+	bCuckoo* c1;
+	bCuckoo* c2;
+	ofstream fout;
+	ofstream fr1;
+	fr1.open("fr2.txt", ios::out);
+	fout.open("LCHT_new_merge_time.txt", ios::out);
+
+	Edge* EE = read_stackoverflow_data(&cnt, 100000000);
+	set<key_type> node; node.clear();
+	for (int i = 0; i < cnt; ++i) {
+		node.insert(EE[i].src);
+	}
+	cout << "node.size(): " << node.size() << endl;
+	set<Edge, EdgeLess> ed; ed.clear();
+	queue<Edge> q;
+	for (int it = 0; it < cnt; ++it) {
+		if (ed.count(EE[it])) { continue; }
+		ed.insert(EE[it]);
+		q.push(EE[it]);
+	}
+	for (int L = 4; L <= 1024 * 16; L = L * 4) {
+		long time = 0;
+		int tt = 0;
+		for (int mm = 0; mm < mul; ++mm) {
+			use.blacklist.clear();
+			c0 = new bCuckoo(L, L / 2, us1, us2);
+			c1 = new bCuckoo(L / 2, L / 4, us1, us2);
+			c2 = new bCuckoo(L / 2, L / 4, us1, us2);
+			while (!q.empty()) {
+				if (c1->num < (c1->len1 + c1->len2) * bup * rate)
+				{
+					c1->insert(q.front()); q.pop();
+				}
+				if (c2->num < (c2->len1 + c2->len2) * bup * rate)
+				{
+					c2->insert(q.front()); q.pop();
+				}
+				if (c0->num < (c0->len1 + c0->len2) * bup * rate)
+				{
+					c0->insert(q.front()); q.pop();
+				}
+				if ((c1->num >= (c1->len1 + c1->len2) * bup * rate) && (c2->num >= (c2->len1 + c2->len2) * bup * rate) && (c0->num >= (c0->len1 + c0->len2) * bup * rate)) {
+					++tt;
+					clock_t time_start = clock();
+					bCuckoo* c = use.merge(c0, c1, c2);
+					clock_t time_end = clock();
+					time = time + (time_end - time_start);
+					for (int j = 0; j < L * 2; ++j)
+						for (int k = 0; k < bup; ++k)
+						{
+							fr1 << c->layer1.layer[j].bslot[k].src << c->layer1.layer[j].bslot[k].pt;
+							for (int ww = 0; ww < 3; ++ww)
+								fr1 << (long)(c->layer1.layer[j].bslot[k].slot[ww]);
+						}
+					for (int j = 0; j < L; ++j)
+						for (int k = 0; k < bup; ++k) {
+							fr1 << c->layer2.layer[j].bslot[k].src << c->layer2.layer[j].bslot[k].pt;
+							for (int ww = 0; ww < 3; ++ww)
+								fr1 << (long)(c->layer2.layer[j].bslot[k].slot[ww]);
+						}
+					delete c;
+					break;
+				}
+			}
+		}
+		double average = (double)time / (double)mul;
+		if (tt != mul) { cout << "false" << endl; }
+		assert(tt == mul);
+		fout << "L=" << L << " :" << endl;
+		fout << "average merge time:  " << average << endl;
+	}
+
+	fout.close();
+	fr1.close();
+}
+
+void test_merge_cost_L_CHT_old() {
+	count_type cnt;
+	int mul = 10;
+	holemerge use(bl1, bl2, 0, 221);
+	bCuckoo* c0;
+	bCuckoo* c1;
+	bCuckoo* c2;
+	ofstream fout;
+	ofstream fr1;
+	fr1.open("fr1.txt", ios::out);
+	fout.open("LCHT_old_merge_time.txt", ios::out);
+
+	Edge* EE = read_stackoverflow_data(&cnt, 100000000);
+	set<key_type> node; node.clear();
+	for (int i = 0; i < cnt; ++i) {
+		node.insert(EE[i].src);
+	}
+	cout << "node.size(): " << node.size() << endl;
+	set<Edge, EdgeLess> ed; ed.clear();
+	queue<Edge> q;
+	for (int it = 0; it < cnt; ++it) {
+		if (ed.count(EE[it])) { continue; }
+		ed.insert(EE[it]);
+		q.push(EE[it]);
+	}
+	for (int L = 4; L <= 1024 * 16; L = L * 4) {
+		long time = 0;
+		int tt = 0;
+		for (int mm = 0; mm < mul; ++mm) {
+			use.blacklist.clear();
+			c0 = new bCuckoo(L, L / 2, us1, us2);
+			c1 = new bCuckoo(L / 2, L / 4, us1, us2);
+			c2 = new bCuckoo(L / 2, L / 4, us1, us2);
+			while (!q.empty()) {
+				if (c1->num < (c1->len1 + c1->len2) * bup * rate)
+				{
+					c1->insert(q.front()); q.pop();
+				}
+				if (c2->num < (c2->len1 + c2->len2) * bup * rate)
+				{
+					c2->insert(q.front()); q.pop();
+				}
+				if (c0->num < (c0->len1 + c0->len2) * bup * rate)
+				{
+					c0->insert(q.front()); q.pop();
+				}
+				if ((c1->num >= (c1->len1 + c1->len2) * bup * rate) && (c2->num >= (c2->len1 + c2->len2) * bup * rate) && (c0->num >= (c0->len1 + c0->len2) * bup * rate)) {
+					++tt;
+					clock_t time_start = clock();
+					bCuckoo* mid = use.merge(c1, c2);
+					bCuckoo* c = use.merge(c0, mid);
+					clock_t time_end = clock();
+					time = time + (time_end - time_start);
+					for (int j = 0; j < L * 2; ++j)
+						for (int k = 0; k < bup; ++k)
+						{
+							fr1 << c->layer1.layer[j].bslot[k].src << c->layer1.layer[j].bslot[k].pt;
+							for (int ww = 0; ww < 3; ++ww)
+								fr1 << (long)(c->layer1.layer[j].bslot[k].slot[ww]);
+						}
+					for (int j = 0; j < L; ++j)
+						for (int k = 0; k < bup; ++k) {
+							fr1 << c->layer2.layer[j].bslot[k].src << c->layer2.layer[j].bslot[k].pt;
+							for (int ww = 0; ww < 3; ++ww)
+								fr1 << (long)(c->layer2.layer[j].bslot[k].slot[ww]);
+						}
+					delete c;
+					break;
+				}
+			}
+		}
+		double average = (double)time / (double)mul;
+		if (tt != mul) { cout << "false" << endl; }
+		assert(tt == mul);
+		fout << "L=" << L << " :" << endl;
+		fout << "average merge time:  " << average << endl;
+	}
+
+	fout.close();
+	fr1.close();
+}
+
+#ifdef TEST_KICK
+void test_kick() {
+	sblacklist.clear();
+	count_type cnt;
+
+	Edge* edge = read_NotreDame_data(&cnt, 100000000);
+	holemerge hole(bl1, bl2, 0, 221);
+	for (int i = 0; i < cnt; ++i) {
+		hole.insert(edge[i]);
+	}
+	cout << "S-CHT average kick times: " << (double)s_hole / (double)s_num << endl;
+	cout << "S-CHT average T(i.e. kicktimes/2): " << ((double)s_hole / (double)s_num) / 2 << endl;
+	cout << "L-CHT average kick times: " << (double)l_hole / (double)l_num << endl;
+	cout << "L-CHT average T(i.e. kicktimes/2): " << ((double)l_hole / (double)l_num) / 2 << endl;
+	delete[] edge;
+}
+
+void test_kick_2() {
+	count_type cnt;
+	Cuckoo* c0;
+	Edge* EE = read_NotreDame_data(&cnt, 100000000);
+	set<key_type> node; node.clear();
+	for (int i = 0; i < cnt; ++i) {
+		node.insert(EE[i].dst);
+	}
+
+	for (int L = 4; L <= 1024 * 16; L = L * 4) {
+		sblacklist.clear();
+		c0 = new Cuckoo(L, L / 2, us1, us2);
+		s_hole = 0;
+		l_hole = 0;
+		s_num = 0;
+		l_num = 0;
+		unsigned long i = 0;
+		unsigned long h = 0;
+		for (auto it = node.begin(); it != node.end(); ) {
+			if (c0->num < (c0->len1 + c0->len2) * bup * rate)
+			{
+				c0->insert(*it); ++it;
+				++i;
+				h += s_kick;
+			}
+			else break;
+		}
+		assert(h == s_hole); assert(i == s_num);
+		cout << "L=" << L << " :" << endl;
+		cout << "S-CHT average kick times: " << (double)s_hole / (double)s_num << endl;
+		cout << "S-CHT average T(i.e. kicktimes/2): " << ((double)s_hole / (double)s_num) / 2 << endl;
+	}
+}
+#endif
+void test_CDF() {
+	count_type cnt;
+	TUPLES* items = read_data((folder + filenames[0]).c_str(), 100000000, &cnt);
+	std::cout << "The number of packet:" << cnt << std::endl;
+	Edge* edge = new Edge[cnt];
+	for (count_type i = 0; i < cnt; ++i)
+		memcpy(&edge[i], &items[i], sizeof(Edge));
+	set<Edge, EdgeLess> ed;
+	ed.insert(edge, edge + cnt);
+	int edsize = ed.size();
+	cout << "edsize:  " << edsize << endl;
+	set<key_type> node; node.clear();
+	for (int i = 0; i < cnt; ++i) {
+		node.insert(edge[i].dst);
+		node.insert(edge[i].src);
+	}
+	cout << "node num:  " << node.size() << endl;
+}
+
+void test_Circle() {
+	count_type cnt;
+
+	Edge* edge = read_NotreDame_data(&cnt, 100000000);
+	for (int i = 0; i < cnt; ++i) {
+		if (edge[i].dst == edge[i].src)cout << edge[i].dst << "   " << edge[i].src << endl;
+
+	}
+	cout << "OK!  " << endl;
+}
+
+void make_dataset() {
+	ofstream fout;
+	double node = 6000;
+	double rrr = 0.9;
+	double num = rrr * node;
+	fout.open("CuckooGraphDataset.txt", ios::out);
+	for (int i = 1; i <= node; ++i) {
+		for (int j = 1; j <= num; ++j) {
+			int u = i + j;
+			if (u > node)u = u - node;
+			fout << u << ',' << i << endl;
+		}
+	}
+	fout.close();
+}
+
+void make_dataset_new() {
+	ofstream fout;
+	double node = 8000;
+	double rrr = 0.9;
+	double num = rrr * node;
+	int r = 10;
+	fout.open("CuckooGraphDatasetNewNew.txt", ios::out);
+	for (int i = 1; i <= node; ++i) {
+		for (int j = 1; j <= node; ++j) {
+			if (j != i && ((rand() % (10))))
+				fout << j << ',' << i << endl;
+		}
+	}
+	fout.close();
+}
+
+void test_gss_time() {
+	cout << "GSS:" << endl;
+	count_type cnt;
+
+	Edge* edge = read_NotreDame_data(&cnt, 100000000);
+
+	GSS hole(1200, 16, 16, 2, 16, false);
+
+	int sum = 0;
+	clock_t t1 = clock();
+	for (int i = 0; i < cnt; ++i) {
+		hole.insert(to_string(edge[i].src), to_string(edge[i].dst), 1);
+	}
+	clock_t t2 = clock();
+	long t3 = t2 - t1;
+	cout << "Insert average time: " << (double)t3 / (double)cnt << endl;
+	t1 = clock();
+	for (int i = 0; i < cnt; ++i) {
+		sum += hole.edgeQuery(to_string(edge[i].src), to_string(edge[i].dst));
+	}
+	t2 = clock();
+	t3 = t2 - t1;
+	cout << "Query average time: " << (double)t3 / (double)cnt << endl;
+	cout << "sum: " << sum << endl;
+	delete[] edge;
+}
+
+void test_Auxo_time() {
+	cout << "Auxo:" << endl;
+	count_type cnt;
+
+	Edge* edge = read_NotreDame_data(&cnt, 100000000);
+
+	int fpl = 16, cols = 4, candiNum = 16, width = 100;
+	Auxo* auxo = new Auxo(width, cols, candiNum, fpl);
+
+	int sum = 0;
+	clock_t t1 = clock();
+	for (int i = 0; i < cnt; ++i) {
+		auxo->insert(to_string(edge[i].src), to_string(edge[i].dst));
+	}
+	clock_t t2 = clock();
+	long t3 = t2 - t1;
+	cout << "Insert average time: " << (double)t3 / (double)cnt << endl;
+	t1 = clock();
+	for (int i = 0; i < cnt; ++i) {
+		sum += auxo->edgeQuery(to_string(edge[i].src), to_string(edge[i].dst));
+	}
+	t2 = clock();
+	t3 = t2 - t1;
+	cout << "Query average time: " << (double)t3 / (double)cnt << endl;
+	cout << "sum: " << sum << endl;
+	cout << "memory:  " << (double)(auxo->memoryAllocated2) / 131072 << " M\n";
+	delete[] edge;
+	delete auxo;
+}
+
+void test_tcm_time() {
+	cout << "TCM:" << endl;
+	count_type cnt;
+
+	Edge* edge = read_NotreDame_data(&cnt, 100000000);
+
+	TCM hole(19200, 19200, 9, false);
+
+	int sum = 0;
+	clock_t t1 = clock();
+	for (int i = 0; i < cnt; ++i) {
+		string s1 = to_string(edge[i].src);
+		string s2 = to_string(edge[i].dst);
+		hole.insert((unsigned char*)(s1.c_str()), (unsigned char*)(s2.c_str()), 1, s1.length(), s2.length());
+	}
+	clock_t t2 = clock();
+	long t3 = t2 - t1;
+	cout << "Insert average time: " << (double)t3 / (double)cnt << endl;
+	t1 = clock();
+	for (int i = 0; i < cnt; ++i) {
+		string s1 = to_string(edge[i].src);
+		string s2 = to_string(edge[i].dst);
+		sum += hole.query((unsigned char*)(s1.c_str()), (unsigned char*)(s2.c_str()), s1.length(), s2.length());
+	}
+	t2 = clock();
+	t3 = t2 - t1;
+	cout << "Query average time: " << (double)t3 / (double)cnt << endl;
+	cout << "sum: " << sum << endl;
+	delete[] edge;
 }
 int main()
 {

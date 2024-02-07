@@ -3,7 +3,6 @@
 
 
 
-
 #include <stdio.h>
 #include <string.h>
 #include <fstream>
@@ -31,8 +30,8 @@ const int ID_LEN = 4;
 static int wind_mem = 0;
 #endif
 
-static int rawseed[2]={0,221};
-static int colseed[2]={0,13};
+static int rawseed[2] = { 0,221 };
+static int colseed[2] = { 0,13 };
 
 
 struct chain {
@@ -67,9 +66,9 @@ public:
 	void insert_new(chain* edge_new, int num);
 	bool query_edge(chain* edge_q);
 	int query_success(int src);
- int query_successor(int src,key_type successor[],int U);
- int query_precursor(int dst, key_type precursor[], int U);
- int query_triangles(key_type src);
+	int query_successor(int src, key_type successor[], int U);
+	int query_precursor(int dst, key_type precursor[], int U);
+	int query_triangles(key_type src);
 };
 
 Chandelier::Chandelier(int length = 2000, int r = 2, int c = 2) {
@@ -83,10 +82,10 @@ Chandelier::Chandelier(int length = 2000, int r = 2, int c = 2) {
 			pointer_head[i][j] = 0;
 			pointer_tail[i][j] = 0;
 		}
-   
-   
+
+
 #ifdef TEST_MEM
-     wind_mem = 3*sizeof(int)+len*len*sizeof(int)+len*len*sizeof(chain*)+len*len*sizeof(chain*);
+	wind_mem = 3 * sizeof(int) + len * len * sizeof(int) + len * len * sizeof(chain*) + len * len * sizeof(chain*);
 #endif   
 }
 
@@ -123,11 +122,11 @@ void Chandelier::insert(chain* edge_new, int num = 0) {
 	if (ans == false) {
 
 #ifdef TEST_MEM
-     wind_mem = wind_mem + sizeof(chain);
+		wind_mem = wind_mem + sizeof(chain);
 #endif
 
 		for (int i = 0; i < raw; ++i) {
-			ra[i] = (mmhash(edge_new->src,rawseed[i])) % len;
+			ra[i] = (mmhash(edge_new->src, rawseed[i])) % len;
 		}
 		for (int i = 0; i < col; ++i) {
 			co[i] = mmhash((edge_new->dst), colseed[i]) % len;
@@ -150,7 +149,6 @@ void Chandelier::insert(chain* edge_new, int num = 0) {
 			pointer_tail[r][c] = edge_new;
 		pointer_head[r][c] = edge_new;
 		++counter[r][c];
-		 
 #ifdef OptCuckoo
 		int maxx = max(cnt, raw * col);
 		if (cnt[maxx] > 10 && cnt[minn] + 2 < cnt[maxx] && num < 3) {
@@ -169,7 +167,6 @@ void Chandelier::insert(chain* edge_new, int num = 0) {
 		}
 #endif
 	}
-
 }
 
 void Chandelier::insert_new(chain* edge_new, int num = 0) {
@@ -189,7 +186,6 @@ void Chandelier::insert_new(chain* edge_new, int num = 0) {
 		}
 	int minn = min(cnt, raw * col);
 
-	
 	int r = minn / col;
 	int c = minn % col;
 	r = ra[r];
@@ -223,7 +219,6 @@ void Chandelier::insert_new(chain* edge_new, int num = 0) {
 #endif
 }
 
-
 bool cmp(chain* a, chain* b) {
 	if (a->src == b->src && a->dst == b->dst)
 		return true;
@@ -240,7 +235,6 @@ bool Chandelier::query_edge(chain* edge_q) {
 	for (int i = 0; i < col; ++i) {
 		co[i] = mmhash((edge_q->dst), colseed[i]) % len;
 	}
-	 
 	int cnt[raw * col];
 	for (int i = 0; i < raw; ++i)
 		for (int j = 0; j < col; ++j) {
@@ -253,7 +247,7 @@ bool Chandelier::query_edge(chain* edge_q) {
 	for (; temp != nullptr; temp = temp->pointer_chand) {
 		if (cmp(edge_q, temp))
 			return true;
-	} 
+	}
 	for (int i = 0; i < raw; ++i) {
 		for (int j = 0; j < col; ++j) {
 			if (i * col + j == minn)
@@ -289,9 +283,10 @@ int Chandelier::query_success(int src_q) {
 	}
 	return cnt;
 }
+
 const int MAX_Threshold = 500000;
 
-int Chandelier::query_successor(int src_q,key_type successor[],int U) {
+int Chandelier::query_successor(int src_q, key_type successor[], int U) {
 	unsigned int ra[raw];
 	int cnt = U;
 	for (int i = 0; i < raw; ++i) {
@@ -305,13 +300,13 @@ int Chandelier::query_successor(int src_q,key_type successor[],int U) {
 			chain* temp = pointer_head[ra[i]][j];
 			for (; temp != nullptr; temp = temp->pointer_chand) {
 				if (temp->src == src_q) {
-					successor[U]=temp->dst;
-          ++U;
+					successor[U] = temp->dst;
+					++U;
 				}
 			}
 		}
 	}
-	return U-cnt;
+	return U - cnt;
 }
 
 int Chandelier::query_precursor(int dst, key_type precursor[], int U) {
@@ -343,12 +338,14 @@ int Chandelier::query_triangles(key_type src) {
 	int sum1 = query_successor(src, successor, 0);
 	int sum2 = query_precursor(src, precursor, 0);
 	chain* tempC = new chain();
-	for(int i=0;i<sum1;++i)
+	for (int i = 0; i < sum1; ++i)
 		for (int j = 0; j < sum2; ++j) {
 			tempC->src = successor[i];
 			tempC->dst = precursor[j];
-			bool tempC_new = query_edge(tempC);
-			if (tempC_new)++cnt;
+			if ((successor[i] != src) && (precursor[j] != src) && (precursor[j] != successor[i])) {
+				bool tempC_new = query_edge(tempC);
+				if (tempC_new)++cnt;
+			}
 		}
 	delete tempC;
 	return cnt;
@@ -391,7 +388,6 @@ void insertList(int src, listChain* edge) {
 		crossList[src] = edge;
 		updateList(edge->dst, edge);
 	}
-
 }
 
 int asrc[63497059];
@@ -414,7 +410,7 @@ int load_data13_CAIDA(int length = MAXNUM)
 	return i;
 }
 
-int load_data20_CAIDA(int length = MAXNUM)
+int load_data20_CAIDA(int length = 100000000)
 {
 	ifstream input("20.dat", ios::in | ios::binary);
 	char buf[200] = { 0 };
@@ -463,8 +459,6 @@ long insert_cross(int len) {
 	return time;
 }
 
-
-
 long insert_chand(int len) {
 	clock_t time_start = clock();
 	for (int i = 0; i < len; ++i) {
@@ -487,13 +481,5 @@ long insert_chand(int len) {
 int qsrc[20000000];
 int qdst[20000000];
 int wgh[3][1000000];
-
-
-
-
-
-
-
-
 
 #endif

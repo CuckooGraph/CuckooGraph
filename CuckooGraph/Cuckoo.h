@@ -9,7 +9,6 @@
 #include <set>
 #include <map>
 #include <cstdlib>
-
 #include <chrono>
 #include <iostream>
 #include <stdint.h>
@@ -34,6 +33,15 @@ using namespace std;
 static int cuckoo_mem = 0;
 #endif
 
+//#define TEST_KICK
+#ifdef TEST_KICK
+static unsigned long s_kick = 0;
+static unsigned long l_kick = 0;
+static unsigned long s_hole = 0;
+static unsigned long l_hole = 0;
+static unsigned long s_num = 0;
+static unsigned long l_num = 0;
+#endif
 
 int asum;
 key_type mykick;
@@ -59,7 +67,6 @@ public:
 	Bucket() {
 		memset(bslot, 0, sizeof(key_type) * bup);
 	}
-
 
 
 	int del(key_type key) {
@@ -103,7 +110,6 @@ public:
 		return 0;
 #endif
 	}
-
 
 	int insert(key_type key) {
 #ifdef USING_SIMD
@@ -169,8 +175,6 @@ public:
 		__m512i* keys_p = (__m512i*)(bslot);
 		int matched = 0;
 		matched = _mm512_cmpeq_epi32_mask(item, *keys_p);
-
-
 		return matched != 0;
 #endif
 
@@ -215,7 +219,6 @@ public:
 	}
 	int insert(key_type key) {
 		return layer[(int)(mmhash(key, seed) % (uint32_t)length)].insert(key);
-
 	}
 };
 
@@ -228,11 +231,12 @@ public:
 	int num;
 	Layer layer1;
 	Layer layer2;
-	Cuckoo(int l1, int l2, int s1, int s2) :len1(l1), len2(l2), seed1(s1), seed2(s2), num(0), layer1(l1, s1), layer2(l2, s2) {
+	Cuckoo(int l1, int l2, int s1, int s2) :len1(l1), len2(l2), seed1(s1), seed2(s2), num(0), layer1(l1, s1), layer2(l2, s2)
+	{
+
 	}
 
 #ifdef TEST_MEM
-
 	int get_mem() {
 		int mr = 0;
 		mr += sizeof(Cuckoo);
@@ -243,6 +247,10 @@ public:
 #endif     
 
 	bool insert(key_type item) {
+#ifdef TEST_KICK
+		s_kick = 0;
+		s_num += 1;
+#endif
 		int ir = layer1.insert(item);
 		if (ir) {
 			if (ir == 1)
@@ -270,6 +278,10 @@ public:
 				if (f) {
 					if (f == 1)
 						++num;
+#ifdef TEST_KICK
+					s_kick = kicktimes + 1 - times;
+					s_hole += s_kick;
+#endif
 					return true;
 				}
 				--times;
@@ -286,6 +298,10 @@ public:
 				{
 					if (f == 1)
 						++num;
+#ifdef TEST_KICK
+					s_kick = kicktimes + 1 - times;
+					s_hole += s_kick;
+#endif
 					return true;
 				}
 				--times;
@@ -295,6 +311,10 @@ public:
 			}
 		}
 		mykick = ins;
+#ifdef TEST_KICK
+		s_kick = kicktimes;
+		s_hole += s_kick;
+#endif
 		return false;
 	}
 
