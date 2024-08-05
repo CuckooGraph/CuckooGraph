@@ -13,17 +13,25 @@
 ### `Competitors`
 #### Prerequisites
 
-You should clone the source code of LiveGraph, Sortledton and Spruce. Then compile these graph systems respectively. The github links are as follows. You can turn to corresponding link for more details. Remember to move the library files (with suffix of .so or .a) into folder **lib/.**
+- tbb
 
-- **LiveGraph**: [GitHub - thu-pacman/LiveGraph: LiveGraph: a transactional graph storage system with purely sequential adjacency list scans](https://github.com/thu-pacman/LiveGraph)
+- pthread
 
-- **Sortledton**: [Per Fuchs / Sortledton · GitLab](https://gitlab.db.in.tum.de/per.fuchs/sortledton)
+- numa
 
-- **Spruce**: [GitHub - Stardust-SJF/Spruce: A Fast, Space-saving Structure for In-Memory Dynamic Graph Storage](https://github.com/Stardust-SJF/Spruce)
+- event
+
+- boost
+
+- openmp
 
 #### Compilation
 
+Our codes for competitors are in folder **Competitors/**. 
+
 Due to name collision, you should compile the test platform for LiveGraph, Sortletdon and Spruce respectively. The utilities will be compiled as well.
+
+`cd Competitors/`
 
 `mkdir build && cd build`
 
