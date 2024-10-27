@@ -18,6 +18,7 @@
 #include"GSS.h"
 #include"Auxo.h"
 #include"tcm.h"
+#include "CuckooGraphInterface.h"
 #define lt 6
 #define rate 0.9
 #define u1 4
@@ -8201,4 +8202,113 @@ int main()
 	test_hole_th();
 	test_wind_th();
 	exit(0);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// #include "redismodule.h"
+using SUI = set<unsigned int>;
+using HII = unordered_map<int, int>;
+
+struct CuckooGraphTypeObject *createCuckooGraphTypeObject(void)
+{
+    struct CuckooGraphTypeObject *ptr = new CuckooGraphTypeObject;
+    holemerge *temp1 = new holemerge(bl1, bl2, 0, 221);
+    ptr->Graph = temp1;
+
+    HII *temp2 = new HII;
+    ptr->VertexCount = temp2;
+    return ptr;
+}
+
+// void InsertInternal(struct CuckooGraphTypeObject *o, uint32_t ele1, uint32_t ele2)
+// {
+//     SUI *ptr1 = (SUI*)o->Set;
+//     ptr1->insert(ele);
+//     holemerge *ptr2 = (holemerge *)o->Graph;
+//     ptr2->
+// }
+
+void CuckooGraphTypeInsert(struct CuckooGraphTypeObject *o, int ele1, int ele2)
+{
+    HII *ptr1 = (HII*)o->VertexCount;
+    (*ptr1)[ele1]++;
+	(*ptr1)[ele2]++;
+
+
+    holemerge *ptr2 = (holemerge *)o->Graph;
+    ptr2->insert({ele1, ele2});
+}
+
+void CuckooGraphTypeReleaseObjectInternal(struct CuckooGraphTypeObject *o)
+{
+	holemerge *ptr1 = (holemerge *)o->Graph;
+	HII *ptr2 = (HII *)o->VertexCount;
+	delete ptr1;
+	delete ptr2;
+	// // RedisModule_Free(o);
+	// free(o);
+}
+
+int QueryInternal(struct CuckooGraphTypeObject *o, int src, int dst)
+{
+	holemerge *ptr = (holemerge*)o->Graph;
+	return ptr->query({src, dst}) >= 1;
+}
+
+void DelInternal(struct CuckooGraphTypeObject *o, int src, int dst)
+{
+	holemerge *ptr1 = (holemerge*)o->Graph;
+	HII *ptr2 = (HII *)o->VertexCount;
+	ptr1->del({src, dst});
+	(*ptr2)[src]--;
+	(*ptr2)[dst]--;
+	if ((*ptr2)[src] == 0)
+		ptr2->erase(src);
+	if ((*ptr2)[dst] == 0)
+		ptr2->erase(dst);
+}
+
+void GetNeighborsInternal(struct CuckooGraphTypeObject *o, int src, int **p_addr, int *p_len)
+{
+	holemerge *ptr = (holemerge*)o->Graph;
+	auto vec = ptr->GetNeighbors(src);
+	*p_len = vec.size();
+	*p_addr = (int *)malloc((*p_len) * sizeof(int));
+	for (int i = 0; i < *p_len; i++)
+		(*p_addr)[i] = vec[i].first;
+}
+
+void GetAllVertices(struct CuckooGraphTypeObject *o, int **p_addr, int *p_len)
+{
+	holemerge *ptr1 = (holemerge*)o->Graph;
+	HII *ptr2 = (HII *)o->VertexCount;
+	*p_len = ptr2->size();
+	(*p_addr) = (int *)malloc((*p_len) * sizeof(int));
+	int i = 0;
+	for (auto [dst, _]: *ptr2)
+		(*p_addr)[i++] = dst;
+}
+
+// void CreateUnorderedMap(struct CuckooGraphTypeObject *o)
+// {
+// 	holemerge *ptr1 = (holemerge*)o->Graph;
+// }
+
+void UpdateUnorderedMap(struct CuckooGraphTypeObject *o, int v)
+{
+	holemerge *ptr1 = (holemerge*)o->Graph;
+	HII *ptr2 = (HII *)o->VertexCount;
+	(*ptr2)[v]++;
 }
