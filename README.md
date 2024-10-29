@@ -23,6 +23,30 @@
 
 2. ./cuckoo
    
+   ### CuckooGraph on Neo4j
+   
+   - cd /path/to/CuckooGraphNeo4j
+     
+   - mvn clean install -DskipTests -Dlicense.skip=true -Doverwrite
+     
+   - cd /path/to/CuckooNeo4j/packaging/standalone/target/
+  
+   - tar -xzvf neo4j-community-4.2.0-SNAPSHOT-unix.tar.gz
+  
+   - Rename the folder obtained after extraction to neo4j.
+  
+   - cp -r /path/to/CuckooGraph/CuckooGraphNeo4j/TestingAPI/neo4jAPI /path/to/CuckooNeo4j/packaging/standalone/target/
+  
+   - Modify the reading of dataset in Testing.java.
+  
+   - cd /path/to/CuckooNeo4j/packaging/standalone/target/neo4jAPI/
+  
+   - javac -cp .:/path/to/CuckooNeo4j/packaging/standalone/target/neo4j/lib/* Testing.java
+  
+   - cd /path/to/CuckooNeo4j/packaging/standalone/target/ 
+  
+   - java -cp .:/path/to/CuckooNeo4j/packaging/standalone/target/neo4j/lib/* neo4jAPI.Testing
+     
    ### CuckooGraph on Redis
    
    #### Prerequisites
