@@ -13,6 +13,8 @@
 * `CuckooGraph_weighted` contains the codes of CuckooGraph and WBI(weighted version).
 
 * `Syn-Datasets-Code` contains the codes we used to synthesize the DenseGraph dataset and the SparseGraph dataset.
+
+*  `CuckooGraphNeo4j` contains the codes of the neo4j implementation of CuckooGraph
   
   ## How to run
   
@@ -29,23 +31,23 @@
      
    - mvn clean install -DskipTests -Dlicense.skip=true -Doverwrite
      
-   - cd /path/to/CuckooNeo4j/packaging/standalone/target/
+   - cd /path/to/CuckooGraphNeo4j/packaging/standalone/target/
   
    - tar -xzvf neo4j-community-4.2.0-SNAPSHOT-unix.tar.gz
   
    - Rename the folder obtained after extraction to neo4j.
   
-   - cp -r /path/to/CuckooGraph/CuckooGraphNeo4j/TestingAPI/neo4jAPI /path/to/CuckooNeo4j/packaging/standalone/target/
+   - cp -r /path/to/CuckooGraph/CuckooGraphNeo4j/TestingAPI/neo4jAPI /path/to/CuckooGraphNeo4j/packaging/standalone/target/
   
    - Modify the reading of dataset in Testing.java.
   
-   - cd /path/to/CuckooNeo4j/packaging/standalone/target/neo4jAPI/
+   - cd /path/to/CuckooGraphNeo4j/packaging/standalone/target/neo4jAPI/
   
-   - javac -cp .:/path/to/CuckooNeo4j/packaging/standalone/target/neo4j/lib/* Testing.java
+   - javac -cp .:/path/to/CuckooGraphNeo4j/packaging/standalone/target/neo4j/lib/* Testing.java
   
-   - cd /path/to/CuckooNeo4j/packaging/standalone/target/ 
+   - cd /path/to/CuckooGraphNeo4j/packaging/standalone/target/ 
   
-   - java -cp .:/path/to/CuckooNeo4j/packaging/standalone/target/neo4j/lib/* neo4jAPI.Testing
+   - java -cp .:/path/to/CuckooGraphNeo4j/packaging/standalone/target/neo4j/lib/* neo4jAPI.Testing
      
    ### CuckooGraph on Redis
    
